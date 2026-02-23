@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Profile, TeamMember, Team, Week, Expense } from '@/types/database';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,6 +10,8 @@ import { ExpenseForm } from '@/components/expense-form';
 import { ExpenseList } from '@/components/expense-list';
 import { AddFundsDialog } from '@/components/add-funds-dialog';
 import { calculateTotalSpent, calculateRemaining } from '@/lib/expense-calculations';
+import { useRealtimeSubscription } from '@/hooks/use-realtime';
+import { DashboardSkeleton } from '@/components/loading-skeletons';
 import Link from 'next/link';
 
 interface TeamDashboardProps {
@@ -26,12 +28,7 @@ export function TeamDashboard({ profile, membership }: TeamDashboardProps) {
 
   const role = membership?.role ?? profile?.role;
 
-  useEffect(() => {
-    if (!membership) return;
-    loadData();
-  }, [membership]);
-
-  async function loadData() {
+  const loadData = useCallback(async function loadDataFn() {
     if (!membership) return;
     const supabase = createClient();
 
@@ -64,14 +61,19 @@ export function TeamDashboard({ profile, membership }: TeamDashboardProps) {
       .select('*', { count: 'exact', head: true })
       .eq('team_id', membership.team_id);
     setMemberCount(count || 0);
-  }
+  }, [membership]);
+
+  useEffect(() => {
+    if (!membership) return;
+    loadData();
+  }, [membership, loadData]);
+
+  // Real-time updates for expenses and fund additions
+  useRealtimeSubscription('expenses', membership?.team_id, loadData);
+  useRealtimeSubscription('fund_additions', membership?.team_id, loadData);
 
   if (!profile) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-muted-foreground">Loading...</p>
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   if (!membership) {
@@ -99,14 +101,14 @@ export function TeamDashboard({ profile, membership }: TeamDashboardProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold">{membership.teams.name}</h2>
           <p className="text-muted-foreground">
             {week?.label || 'No active week'}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           {role === 'admin' && (
             <>
               <Link href="/team/settings">
@@ -114,12 +116,12 @@ export function TeamDashboard({ profile, membership }: TeamDashboardProps) {
                   &#9881;
                 </Button>
               </Link>
-              <Button variant="outline" onClick={() => setShowAddFunds(true)}>
+              <Button variant="outline" size="sm" onClick={() => setShowAddFunds(true)}>
                 Add Funds
               </Button>
             </>
           )}
-          <Button onClick={() => setShowExpenseForm(true)}>
+          <Button size="sm" onClick={() => setShowExpenseForm(true)}>
             Add Expense
           </Button>
         </div>

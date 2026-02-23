@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { calculateTotalSpent } from '@/lib/expense-calculations';
+import { HistorySkeleton } from '@/components/loading-skeletons';
 
 interface HistoryViewProps {
   teamId: string | undefined;
@@ -169,7 +170,7 @@ export function HistoryView({ teamId }: HistoryViewProps) {
   }
 
   if (loading) {
-    return <p className="text-muted-foreground">Loading history...</p>;
+    return <HistorySkeleton />;
   }
 
   return (

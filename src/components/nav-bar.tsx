@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useUser } from '@/hooks/use-user';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { NavBarSkeleton } from '@/components/loading-skeletons';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -46,7 +47,7 @@ export function NavBar() {
         .toUpperCase()
     : '?';
 
-  if (loading) return null;
+  if (loading) return <NavBarSkeleton />;
 
   return (
     <>
@@ -112,14 +113,14 @@ export function NavBar() {
       </header>
 
       {/* Mobile bottom nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 border-t bg-card z-50">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 border-t bg-card z-50 pb-safe">
         <div className="flex justify-around py-2">
           {visibleNavItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
               className={cn(
-                'flex flex-col items-center gap-1 px-3 py-1 text-xs transition-colors',
+                'flex flex-col items-center gap-1 px-4 py-2 text-xs transition-colors rounded-md min-h-[44px] justify-center',
                 pathname === item.href
                   ? 'text-primary font-medium'
                   : 'text-muted-foreground'

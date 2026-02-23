@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import { approveInviteRequest, denyInviteRequest } from '@/app/(dashboard)/expenses/actions';
+import { VolunteersSkeleton } from '@/components/loading-skeletons';
 
 interface VolunteersViewProps {
   profile: Profile | null;
@@ -111,7 +112,7 @@ export function VolunteersView({ profile, teamId, role }: VolunteersViewProps) {
   }
 
   if (loading) {
-    return <p className="text-muted-foreground">Loading...</p>;
+    return <VolunteersSkeleton />;
   }
 
   if (!teamId) {

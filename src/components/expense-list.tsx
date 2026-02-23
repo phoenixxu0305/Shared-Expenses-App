@@ -6,6 +6,7 @@ import type { Expense, UserRole } from '@/types/database';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -23,6 +24,7 @@ export function ExpenseList({
   onUpdate,
 }: ExpenseListProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [receiptPreview, setReceiptPreview] = useState<{ url: string; description: string } | null>(null);
 
   async function handleSoftDelete(expenseId: string) {
     setDeletingId(expenseId);
@@ -79,14 +81,13 @@ export function ExpenseList({
                 {expense.receipt_url && (
                   <>
                     {' · '}
-                    <a
-                      href={expense.receipt_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary underline"
+                    <button
+                      type="button"
+                      onClick={() => setReceiptPreview({ url: expense.receipt_url!, description: expense.description })}
+                      className="text-primary underline hover:text-primary/80"
                     >
-                      Receipt
-                    </a>
+                      View Receipt
+                    </button>
                   </>
                 )}
               </p>
@@ -110,6 +111,40 @@ export function ExpenseList({
           </CardContent>
         </Card>
       ))}
+      {/* Receipt preview dialog */}
+      {receiptPreview && (
+        <Dialog open={!!receiptPreview} onOpenChange={() => setReceiptPreview(null)}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Receipt — {receiptPreview.description}</DialogTitle>
+            </DialogHeader>
+            <div className="flex flex-col items-center gap-4">
+              {receiptPreview.url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={receiptPreview.url}
+                  alt="Receipt"
+                  className="max-w-full max-h-[60vh] rounded-md object-contain"
+                />
+              ) : (
+                <iframe
+                  src={receiptPreview.url}
+                  className="w-full h-[60vh] rounded-md border"
+                  title="Receipt"
+                />
+              )}
+              <a
+                href={receiptPreview.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-primary underline"
+              >
+                Open in new tab
+              </a>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

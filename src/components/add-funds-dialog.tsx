@@ -63,7 +63,7 @@ export function AddFundsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Add Funds</DialogTitle>
         </DialogHeader>

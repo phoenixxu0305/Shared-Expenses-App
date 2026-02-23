@@ -64,6 +64,29 @@ export default function LoginPage() {
     setLoading(false);
   }
 
+  async function handleForgotPassword() {
+    const emailInput = document.getElementById('login-email') as HTMLInputElement;
+    const email = emailInput?.value;
+    if (!email) {
+      setError('Please enter your email address first.');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+
+    const supabase = createClient();
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+
+    if (error) {
+      setError(error.message);
+    } else {
+      setSuccess('Check your email for a password reset link.');
+    }
+    setLoading(false);
+  }
+
   async function handleInviteRequest(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
@@ -144,6 +167,13 @@ export default function LoginPage() {
                   <Button type="submit" className="w-full" disabled={loading}>
                     {loading ? 'Signing in...' : 'Sign In'}
                   </Button>
+                  <button
+                    type="button"
+                    onClick={handleForgotPassword}
+                    className="w-full text-sm text-muted-foreground hover:text-primary transition-colors"
+                  >
+                    Forgot your password?
+                  </button>
                 </form>
               </CardContent>
             </Card>
