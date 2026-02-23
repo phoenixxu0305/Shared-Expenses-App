@@ -97,12 +97,16 @@ export default function LoginPage() {
     const email = formData.get('email') as string;
     const note = formData.get('note') as string;
 
-    const result = await submitInviteRequest({ email, note: note || null });
+    try {
+      const result = await submitInviteRequest({ email, note: note || null });
 
-    if (result.error) {
-      setError(result.error);
-    } else {
-      setSuccess('Your request has been submitted. An admin will review it shortly.');
+      if (result.error) {
+        setError(result.error);
+      } else {
+        setSuccess('Your request has been submitted. An admin will review it shortly.');
+      }
+    } catch {
+      setError('Something went wrong. Please try again.');
     }
     setLoading(false);
   }

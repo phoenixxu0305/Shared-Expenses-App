@@ -245,19 +245,17 @@ export async function approveInviteRequest(inviteId: string) {
 }
 
 export async function submitInviteRequest(data: { email: string; note: string | null }) {
-  // Use anon client for insert — RLS allows anyone to create invite requests
-  const supabase = await createClient();
-
-  const { error } = await supabase
-    .from('invite_requests')
-    .insert({ email: data.email, note: data.note });
-
-  if (error) return { error: error.message };
-
-  // Notify admins via email (requires service client for auth.admin API)
   try {
+    // Use service client to bypass RLS (caller is unauthenticated)
     const serviceClient = await createServiceClient();
 
+    const { error } = await serviceClient
+      .from('invite_requests')
+      .insert({ email: data.email, note: data.note });
+
+    if (error) return { error: error.message };
+
+    // Notify admins via email
     const { data: admins } = await serviceClient
       .from('profiles')
       .select('id')
@@ -275,11 +273,11 @@ export async function submitInviteRequest(data: { email: string; note: string | 
         }
       }
     }
-  } catch {
-    // Service client unavailable — invite was still saved, skip email
-  }
 
-  return { success: true };
+    return { success: true };
+  } catch {
+    return { error: 'Failed to submit request. Please try again.' };
+  }
 }
 
 export async function denyInviteRequest(inviteId: string) {
