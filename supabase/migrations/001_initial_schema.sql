@@ -131,6 +131,12 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
+-- Helper function to get user's team IDs without triggering RLS recursion
+CREATE OR REPLACE FUNCTION get_user_team_ids()
+RETURNS SETOF UUID AS $$
+  SELECT team_id FROM team_members WHERE user_id = auth.uid()
+$$ LANGUAGE sql SECURITY DEFINER STABLE;
+
 -- Row Level Security
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE teams ENABLE ROW LEVEL SECURITY;
@@ -140,32 +146,29 @@ ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invite_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE fund_additions ENABLE ROW LEVEL SECURITY;
 
--- Profiles: users can read profiles of people in their team, update own
+-- Profiles policies
 CREATE POLICY "Users can view own profile"
   ON profiles FOR SELECT
   USING (auth.uid() = id);
 
 CREATE POLICY "Users can view team member profiles"
   ON profiles FOR SELECT
-  USING (
-    id IN (
-      SELECT tm.user_id FROM team_members tm
-      WHERE tm.team_id IN (
-        SELECT tm2.team_id FROM team_members tm2 WHERE tm2.user_id = auth.uid()
-      )
-    )
-  );
+  USING (id IN (
+    SELECT user_id FROM team_members WHERE team_id IN (SELECT get_user_team_ids())
+  ));
 
 CREATE POLICY "Users can update own profile"
   ON profiles FOR UPDATE
   USING (auth.uid() = id);
 
--- Teams: readable by members, writable by admin
+CREATE POLICY "Users can insert own profile"
+  ON profiles FOR INSERT
+  WITH CHECK (auth.uid() = id);
+
+-- Teams policies
 CREATE POLICY "Team members can view their teams"
   ON teams FOR SELECT
-  USING (
-    id IN (SELECT team_id FROM team_members WHERE user_id = auth.uid())
-  );
+  USING (id IN (SELECT get_user_team_ids()));
 
 CREATE POLICY "Admins can create teams"
   ON teams FOR INSERT
@@ -175,19 +178,14 @@ CREATE POLICY "Admins can create teams"
 
 CREATE POLICY "Admins can update their teams"
   ON teams FOR UPDATE
-  USING (
-    EXISTS (
-      SELECT 1 FROM team_members
-      WHERE team_id = id AND user_id = auth.uid() AND role = 'admin'
-    )
-  );
+  USING (id IN (SELECT get_user_team_ids()) AND EXISTS (
+    SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'
+  ));
 
--- Team members: readable by team members, writable by admin
+-- Team members policies
 CREATE POLICY "Team members can view members"
   ON team_members FOR SELECT
-  USING (
-    team_id IN (SELECT team_id FROM team_members WHERE user_id = auth.uid())
-  );
+  USING (team_id IN (SELECT get_user_team_ids()));
 
 CREATE POLICY "Admins can insert team members"
   ON team_members FOR INSERT
@@ -197,28 +195,20 @@ CREATE POLICY "Admins can insert team members"
 
 CREATE POLICY "Admins can update team members"
   ON team_members FOR UPDATE
-  USING (
-    EXISTS (
-      SELECT 1 FROM team_members tm
-      WHERE tm.team_id = team_members.team_id AND tm.user_id = auth.uid() AND tm.role = 'admin'
-    )
-  );
+  USING (team_id IN (SELECT get_user_team_ids()) AND EXISTS (
+    SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'
+  ));
 
 CREATE POLICY "Admins can delete team members"
   ON team_members FOR DELETE
-  USING (
-    EXISTS (
-      SELECT 1 FROM team_members tm
-      WHERE tm.team_id = team_members.team_id AND tm.user_id = auth.uid() AND tm.role = 'admin'
-    )
-  );
+  USING (team_id IN (SELECT get_user_team_ids()) AND EXISTS (
+    SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'
+  ));
 
--- Weeks: readable by team members, writable by admin
+-- Weeks policies
 CREATE POLICY "Team members can view weeks"
   ON weeks FOR SELECT
-  USING (
-    team_id IN (SELECT team_id FROM team_members WHERE user_id = auth.uid())
-  );
+  USING (team_id IN (SELECT get_user_team_ids()));
 
 CREATE POLICY "Admins can insert weeks"
   ON weeks FOR INSERT
@@ -228,43 +218,34 @@ CREATE POLICY "Admins can insert weeks"
 
 CREATE POLICY "Admins can update weeks"
   ON weeks FOR UPDATE
-  USING (
-    EXISTS (
-      SELECT 1 FROM team_members
-      WHERE team_id = weeks.team_id AND user_id = auth.uid() AND role = 'admin'
-    )
-  );
+  USING (team_id IN (SELECT get_user_team_ids()) AND EXISTS (
+    SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'
+  ));
 
 CREATE POLICY "Admins can delete weeks"
   ON weeks FOR DELETE
-  USING (
-    EXISTS (
-      SELECT 1 FROM team_members
-      WHERE team_id = weeks.team_id AND user_id = auth.uid() AND role = 'admin'
-    )
-  );
+  USING (team_id IN (SELECT get_user_team_ids()) AND EXISTS (
+    SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'
+  ));
 
--- Expenses: readable by team members, writable based on role
+-- Expenses policies
 CREATE POLICY "Team members can view expenses"
   ON expenses FOR SELECT
-  USING (
-    team_id IN (SELECT team_id FROM team_members WHERE user_id = auth.uid())
-  );
+  USING (team_id IN (SELECT get_user_team_ids()));
 
 CREATE POLICY "Team members can create expenses"
   ON expenses FOR INSERT
-  WITH CHECK (
-    EXISTS (SELECT 1 FROM team_members WHERE team_id = expenses.team_id AND user_id = auth.uid())
-  );
+  WITH CHECK (team_id IN (SELECT get_user_team_ids()));
 
 CREATE POLICY "Users can soft-delete own expenses"
   ON expenses FOR UPDATE
-  USING (user_id = auth.uid() OR EXISTS (
-    SELECT 1 FROM team_members
-    WHERE team_id = expenses.team_id AND user_id = auth.uid() AND role IN ('admin', 'treasurer')
+  USING (user_id = auth.uid() OR (
+    team_id IN (SELECT get_user_team_ids()) AND EXISTS (
+      SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin', 'treasurer')
+    )
   ));
 
--- Invite requests: readable/writable by admin
+-- Invite requests policies
 CREATE POLICY "Admins can view invite requests"
   ON invite_requests FOR SELECT
   USING (
@@ -281,18 +262,13 @@ CREATE POLICY "Admins can update invite requests"
     EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
   );
 
--- Fund additions: readable by team members, writable by admin
+-- Fund additions policies
 CREATE POLICY "Team members can view fund additions"
   ON fund_additions FOR SELECT
-  USING (
-    team_id IN (SELECT team_id FROM team_members WHERE user_id = auth.uid())
-  );
+  USING (team_id IN (SELECT get_user_team_ids()));
 
 CREATE POLICY "Admins can add funds"
   ON fund_additions FOR INSERT
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM team_members
-      WHERE team_id = fund_additions.team_id AND user_id = auth.uid() AND role = 'admin'
-    )
-  );
+  WITH CHECK (team_id IN (SELECT get_user_team_ids()) AND EXISTS (
+    SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'
+  ));
