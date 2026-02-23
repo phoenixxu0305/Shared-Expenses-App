@@ -18,10 +18,16 @@ interface TeamSettingsProps {
   team: Team;
   members: (TeamMember & { profiles: Profile })[];
   currentWeek: Week | null;
+  availableUsers: { id: string; full_name: string }[];
 }
 
-export function TeamSettings({ team, members, currentWeek }: TeamSettingsProps) {
+export function TeamSettings({ team, members, currentWeek, availableUsers }: TeamSettingsProps) {
   const router = useRouter();
+
+  // Add member
+  const [selectedUserId, setSelectedUserId] = useState('');
+  const [selectedRole, setSelectedRole] = useState<'volunteer' | 'treasurer'>('volunteer');
+  const [addingMember, setAddingMember] = useState(false);
 
   // Team appearance
   const [teamName, setTeamName] = useState(team.name);
@@ -102,6 +108,24 @@ export function TeamSettings({ team, members, currentWeek }: TeamSettingsProps) 
       toast.success('Member removed');
       router.refresh();
     }
+  }
+
+  async function addMember() {
+    if (!selectedUserId) return;
+    setAddingMember(true);
+    const supabase = createClient();
+    const { error } = await supabase
+      .from('team_members')
+      .insert({ team_id: team.id, user_id: selectedUserId, role: selectedRole });
+
+    if (error) toast.error(error.message);
+    else {
+      toast.success('Member added');
+      setSelectedUserId('');
+      setSelectedRole('volunteer');
+      router.refresh();
+    }
+    setAddingMember(false);
   }
 
   return (
@@ -232,6 +256,51 @@ export function TeamSettings({ team, members, currentWeek }: TeamSettingsProps) 
               )}
             </div>
           ))}
+        </CardContent>
+      </Card>
+
+      {/* Add Members */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Add Members</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {availableUsers.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No users available to add</p>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label>User</Label>
+                <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a user" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableUsers.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.full_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Role</Label>
+                <Select value={selectedRole} onValueChange={(v) => setSelectedRole(v as 'volunteer' | 'treasurer')}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="volunteer">Volunteer</SelectItem>
+                    <SelectItem value="treasurer">Treasurer</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button onClick={addMember} disabled={addingMember || !selectedUserId}>
+                {addingMember ? 'Adding...' : 'Add to Team'}
+              </Button>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>
