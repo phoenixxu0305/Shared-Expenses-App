@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { TeamCreateWizard } from '@/components/team-create-wizard';
 
@@ -8,13 +8,14 @@ export default async function TeamCreatePage() {
 
   if (!user) redirect('/login');
 
-  const { data: profile, error: profileError } = await supabase
+  const serviceClient = await createServiceClient();
+
+  const { data: profile, error: profileError } = await serviceClient
     .from('profiles')
     .select('*')
     .eq('id', user.id)
     .single();
 
-  // If profile can't be read, show error instead of silently redirecting
   if (!profile) {
     return (
       <div className="max-w-lg mx-auto text-center py-12 space-y-4">
@@ -22,7 +23,6 @@ export default async function TeamCreatePage() {
         <p className="text-muted-foreground">
           {profileError?.message || 'Profile not found. Please try logging out and back in.'}
         </p>
-        <p className="text-xs text-muted-foreground">User ID: {user.id}</p>
       </div>
     );
   }
@@ -38,8 +38,7 @@ export default async function TeamCreatePage() {
     );
   }
 
-  // Get approved users not in any team
-  const { data: approvedInvites } = await supabase
+  const { data: approvedInvites } = await serviceClient
     .from('invite_requests')
     .select('*')
     .eq('status', 'approved');

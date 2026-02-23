@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,7 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import type { InviteRequest } from '@/types/database';
 import { toast } from 'sonner';
-import { getCurrentWeekDates, getWeekLabel } from '@/lib/expense-calculations';
+import { createTeam } from '@/app/(dashboard)/team/actions';
 
 interface TeamCreateWizardProps {
   userId: string;
@@ -51,63 +50,17 @@ export function TeamCreateWizard({ userId, approvedInvites }: TeamCreateWizardPr
   async function handleCreate() {
     setLoading(true);
 
-    const supabase = createClient();
-
-    // Create team
-    const { data: team, error: teamError } = await supabase
-      .from('teams')
-      .insert({
-        name: teamName,
-        background_color: bgColor,
-        created_by: userId,
-      })
-      .select()
-      .single();
-
-    if (teamError || !team) {
-      toast.error(teamError?.message || 'Failed to create team');
-      setLoading(false);
-      return;
-    }
-
-    // Add creator as admin member
-    const { error: memberError } = await supabase.from('team_members').insert({
-      team_id: team.id,
-      user_id: userId,
-      role: 'admin',
+    const result = await createTeam({
+      teamName,
+      bgColor,
+      selectedMembers,
+      allocationPerVolunteer,
+      pooledEnabled,
+      pooledPercentage,
     });
 
-    if (memberError) {
-      toast.error('Failed to add you as team member: ' + memberError.message);
-      setLoading(false);
-      return;
-    }
-
-    // Assign selected members' invites to this team
-    // When they sign up, they'll be auto-added via the assigned_team_id
-    if (selectedMembers.length > 0) {
-      await supabase
-        .from('invite_requests')
-        .update({ assigned_team_id: team.id, assigned_role: 'volunteer' })
-        .in('email', selectedMembers)
-        .eq('status', 'approved');
-    }
-
-    // Create the initial week
-    const { start, end } = getCurrentWeekDates();
-    const { error: weekError } = await supabase.from('weeks').insert({
-      team_id: team.id,
-      label: getWeekLabel(new Date()),
-      start_date: start.toISOString().split('T')[0],
-      end_date: end.toISOString().split('T')[0],
-      total_kitty: totalKitty,
-      allocation_per_volunteer: allocationPerVolunteer,
-      pooled_split_enabled: pooledEnabled,
-      pooled_percentage: pooledPercentage,
-    });
-
-    if (weekError) {
-      toast.error('Failed to create week: ' + weekError.message);
+    if (result.error) {
+      toast.error(result.error);
       setLoading(false);
       return;
     }

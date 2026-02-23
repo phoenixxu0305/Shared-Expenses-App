@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { TeamDashboard } from '@/components/team-dashboard';
 import { ensureCurrentWeek } from '@/app/(dashboard)/team/actions';
@@ -9,7 +9,10 @@ export default async function HomePage() {
 
   if (!user) redirect('/login');
 
-  const { data: profile, error: profileError } = await supabase
+  // Use service client to bypass RLS for server-side data fetching
+  const serviceClient = await createServiceClient();
+
+  const { data: profile } = await serviceClient
     .from('profiles')
     .select('*')
     .eq('id', user.id)
@@ -17,13 +20,12 @@ export default async function HomePage() {
 
   // If no profile exists, create one on the fly
   if (!profile) {
-    // First user becomes admin automatically
-    const { count: existingProfiles } = await supabase
+    const { count: existingProfiles } = await serviceClient
       .from('profiles')
       .select('*', { count: 'exact', head: true });
     const assignedRole = (existingProfiles === 0 || existingProfiles === null) ? 'admin' : 'volunteer';
 
-    const { error: insertError } = await supabase
+    const { error: insertError } = await serviceClient
       .from('profiles')
       .upsert({
         id: user.id,
@@ -32,7 +34,6 @@ export default async function HomePage() {
       });
 
     if (insertError) {
-      // Profile creation failed — show basic dashboard anyway
       return (
         <TeamDashboard
           profile={{
@@ -47,8 +48,7 @@ export default async function HomePage() {
       );
     }
 
-    // Re-fetch the newly created profile
-    const { data: newProfile } = await supabase
+    const { data: newProfile } = await serviceClient
       .from('profiles')
       .select('*')
       .eq('id', user.id)
@@ -62,7 +62,7 @@ export default async function HomePage() {
     );
   }
 
-  const { data: membership } = await supabase
+  const { data: membership } = await serviceClient
     .from('team_members')
     .select('*, teams(*)')
     .eq('user_id', user.id)
