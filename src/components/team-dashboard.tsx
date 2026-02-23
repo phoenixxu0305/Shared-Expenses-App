@@ -25,6 +25,7 @@ export function TeamDashboard({ profile, membership }: TeamDashboardProps) {
   const [memberCount, setMemberCount] = useState(0);
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [showAddFunds, setShowAddFunds] = useState(false);
+  const [members, setMembers] = useState<{ id: string; full_name: string }[]>([]);
 
   const role = membership?.role ?? profile?.role;
 
@@ -61,7 +62,23 @@ export function TeamDashboard({ profile, membership }: TeamDashboardProps) {
       .select('*', { count: 'exact', head: true })
       .eq('team_id', membership.team_id);
     setMemberCount(count || 0);
-  }, [membership]);
+
+    // Fetch team members (excluding current user) for admin expense delegation
+    const { data: memberData } = await supabase
+      .from('team_members')
+      .select('user_id, profiles(full_name)')
+      .eq('team_id', membership.team_id);
+
+    if (memberData) {
+      const mapped = memberData
+        .filter((m) => m.user_id !== profile?.id)
+        .map((m) => ({
+          id: m.user_id,
+          full_name: (m.profiles as unknown as { full_name: string } | null)?.full_name || 'Unknown',
+        }));
+      setMembers(mapped);
+    }
+  }, [membership, profile?.id]);
 
   useEffect(() => {
     if (!membership) return;
@@ -226,6 +243,7 @@ export function TeamDashboard({ profile, membership }: TeamDashboardProps) {
           week={week}
           expenses={expenses}
           memberCount={memberCount}
+          members={members}
           onSuccess={loadData}
         />
       )}

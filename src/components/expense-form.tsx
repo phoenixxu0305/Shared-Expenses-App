@@ -26,6 +26,7 @@ interface ExpenseFormProps {
   week: Week;
   expenses: Expense[];
   memberCount: number;
+  members: { id: string; full_name: string }[];
   onSuccess: () => void;
 }
 
@@ -39,6 +40,7 @@ export function ExpenseForm({
   week,
   expenses,
   memberCount,
+  members,
   onSuccess,
 }: ExpenseFormProps) {
   const [expenseType, setExpenseType] = useState<ExpenseType>('personal');
@@ -46,10 +48,13 @@ export function ExpenseForm({
   const [description, setDescription] = useState('');
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
+  const [selectedMemberId, setSelectedMemberId] = useState<string>('');
 
-  const userExpenses = expenses.filter((e) => e.user_id === userId);
+  const isAdminPersonal = role === 'admin' && expenseType === 'personal';
+  const effectiveUserId = isAdminPersonal ? selectedMemberId : userId;
+  const userExpenses = expenses.filter((e) => e.user_id === effectiveUserId);
 
-  const maxPersonal = calculateMaxPersonalExpense(week, userExpenses);
+  const maxPersonal = effectiveUserId ? calculateMaxPersonalExpense(week, userExpenses) : 0;
   const maxTeam = calculateMaxTeamExpense(week, expenses, memberCount);
   const maxAmount = expenseType === 'personal' ? maxPersonal : maxTeam;
 
@@ -58,6 +63,7 @@ export function ExpenseForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (amount <= 0 || !description.trim()) return;
+    if (isAdminPersonal && !selectedMemberId) return;
 
     setLoading(true);
 
@@ -83,6 +89,7 @@ export function ExpenseForm({
       description: description.trim(),
       type: expenseType,
       receiptUrl,
+      ...(isAdminPersonal && selectedMemberId ? { targetUserId: selectedMemberId } : {}),
     });
 
     if (result.error) {
@@ -111,6 +118,7 @@ export function ExpenseForm({
                 onValueChange={(v) => {
                   setExpenseType(v as ExpenseType);
                   setAmount(0);
+                  setSelectedMemberId('');
                 }}
               >
                 <SelectTrigger>
@@ -119,6 +127,30 @@ export function ExpenseForm({
                 <SelectContent>
                   <SelectItem value="personal">Personal</SelectItem>
                   <SelectItem value="team">Team</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {isAdminPersonal && (
+            <div className="space-y-2">
+              <Label>Member</Label>
+              <Select
+                value={selectedMemberId}
+                onValueChange={(v) => {
+                  setSelectedMemberId(v);
+                  setAmount(0);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a member" />
+                </SelectTrigger>
+                <SelectContent>
+                  {members.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.full_name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -176,7 +208,7 @@ export function ExpenseForm({
             </Button>
             <Button
               type="submit"
-              disabled={loading || amount <= 0 || !description.trim()}
+              disabled={loading || amount <= 0 || !description.trim() || (isAdminPersonal && !selectedMemberId)}
             >
               {loading ? 'Adding...' : 'Add Expense'}
             </Button>

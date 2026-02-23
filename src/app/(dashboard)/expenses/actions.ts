@@ -55,9 +55,19 @@ export async function addExpense(data: {
     .eq('week_id', data.weekId)
     .eq('is_deleted', false);
 
+  // Determine whose budget to check for personal expenses
+  let expenseOwnerId = user.id;
+  if (data.targetUserId && data.type === 'personal') {
+    // Only admins can log expenses on behalf of others
+    if (membership.role !== 'admin') {
+      return { error: 'Only admins can log expenses on behalf of other members' };
+    }
+    expenseOwnerId = data.targetUserId;
+  }
+
   if (data.type === 'personal') {
     const userExpenses = (existingExpenses || []).filter(
-      (e) => e.user_id === user.id && e.type === 'personal'
+      (e) => e.user_id === expenseOwnerId && e.type === 'personal'
     );
     const spent = userExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
     let maxAllocation = Number(week.allocation_per_volunteer);
@@ -96,7 +106,7 @@ export async function addExpense(data: {
   const { error } = await supabase.from('expenses').insert({
     team_id: data.teamId,
     week_id: data.weekId,
-    user_id: user.id,
+    user_id: data.targetUserId || user.id,
     target_user_id: data.targetUserId || null,
     amount: data.amount,
     description: data.description,
