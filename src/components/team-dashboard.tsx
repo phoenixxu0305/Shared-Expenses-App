@@ -91,9 +91,9 @@ export function TeamDashboard({ profile, membership }: TeamDashboardProps) {
           You are not part of any team yet.
         </p>
         {role === 'admin' ? (
-          <Link href="/team/create">
-            <Button>Create a Team</Button>
-          </Link>
+          <Button asChild>
+            <Link href="/team/create">Create a Team</Link>
+          </Button>
         ) : (
           <p className="text-sm text-muted-foreground">
             Ask your admin to add you to a team.
@@ -118,11 +118,9 @@ export function TeamDashboard({ profile, membership }: TeamDashboardProps) {
         <div className="flex gap-2 flex-wrap">
           {role === 'admin' && (
             <>
-              <Link href="/team/settings">
-                <Button variant="ghost" size="icon" title="Team Settings">
-                  &#9881;
-                </Button>
-              </Link>
+              <Button variant="ghost" size="icon" title="Team Settings" asChild>
+                <Link href="/team/settings">&#9881;</Link>
+              </Button>
               <Button variant="outline" size="sm" onClick={() => setShowAddFunds(true)}>
                 Add Funds
               </Button>

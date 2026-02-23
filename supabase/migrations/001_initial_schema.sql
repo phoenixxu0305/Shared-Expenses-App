@@ -189,8 +189,23 @@ CREATE POLICY "Team members can view members"
     team_id IN (SELECT team_id FROM team_members WHERE user_id = auth.uid())
   );
 
-CREATE POLICY "Admins can manage team members"
-  ON team_members FOR ALL
+CREATE POLICY "Admins can insert team members"
+  ON team_members FOR INSERT
+  WITH CHECK (
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+  );
+
+CREATE POLICY "Admins can update team members"
+  ON team_members FOR UPDATE
+  USING (
+    EXISTS (
+      SELECT 1 FROM team_members tm
+      WHERE tm.team_id = team_members.team_id AND tm.user_id = auth.uid() AND tm.role = 'admin'
+    )
+  );
+
+CREATE POLICY "Admins can delete team members"
+  ON team_members FOR DELETE
   USING (
     EXISTS (
       SELECT 1 FROM team_members tm
@@ -205,8 +220,23 @@ CREATE POLICY "Team members can view weeks"
     team_id IN (SELECT team_id FROM team_members WHERE user_id = auth.uid())
   );
 
-CREATE POLICY "Admins can manage weeks"
-  ON weeks FOR ALL
+CREATE POLICY "Admins can insert weeks"
+  ON weeks FOR INSERT
+  WITH CHECK (
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+  );
+
+CREATE POLICY "Admins can update weeks"
+  ON weeks FOR UPDATE
+  USING (
+    EXISTS (
+      SELECT 1 FROM team_members
+      WHERE team_id = weeks.team_id AND user_id = auth.uid() AND role = 'admin'
+    )
+  );
+
+CREATE POLICY "Admins can delete weeks"
+  ON weeks FOR DELETE
   USING (
     EXISTS (
       SELECT 1 FROM team_members

@@ -71,11 +71,17 @@ export function TeamCreateWizard({ userId, approvedInvites }: TeamCreateWizardPr
     }
 
     // Add creator as admin member
-    await supabase.from('team_members').insert({
+    const { error: memberError } = await supabase.from('team_members').insert({
       team_id: team.id,
       user_id: userId,
       role: 'admin',
     });
+
+    if (memberError) {
+      toast.error('Failed to add you as team member: ' + memberError.message);
+      setLoading(false);
+      return;
+    }
 
     // Assign selected members' invites to this team
     // When they sign up, they'll be auto-added via the assigned_team_id
@@ -89,7 +95,7 @@ export function TeamCreateWizard({ userId, approvedInvites }: TeamCreateWizardPr
 
     // Create the initial week
     const { start, end } = getCurrentWeekDates();
-    await supabase.from('weeks').insert({
+    const { error: weekError } = await supabase.from('weeks').insert({
       team_id: team.id,
       label: getWeekLabel(new Date()),
       start_date: start.toISOString().split('T')[0],
@@ -99,6 +105,12 @@ export function TeamCreateWizard({ userId, approvedInvites }: TeamCreateWizardPr
       pooled_split_enabled: pooledEnabled,
       pooled_percentage: pooledPercentage,
     });
+
+    if (weekError) {
+      toast.error('Failed to create week: ' + weekError.message);
+      setLoading(false);
+      return;
+    }
 
     toast.success('Team created successfully!');
     router.push('/');
