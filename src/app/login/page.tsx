@@ -105,8 +105,9 @@ export default function LoginPage() {
       } else {
         setSuccess('Your request has been submitted. An admin will review it shortly.');
       }
-    } catch {
-      setError('Something went wrong. Please try again.');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setError(`Something went wrong: ${message}`);
     }
     setLoading(false);
   }

@@ -275,8 +275,9 @@ export async function submitInviteRequest(data: { email: string; note: string | 
     }
 
     return { success: true };
-  } catch {
-    return { error: 'Failed to submit request. Please try again.' };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return { error: `Failed to submit request: ${message}` };
   }
 }
 
