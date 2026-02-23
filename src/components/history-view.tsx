@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Week, Expense, Profile } from '@/types/database';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,9 +18,68 @@ interface WeekWithExpenses extends Week {
   expenses: (Expense & { profiles: Profile })[];
 }
 
+interface GroupedData {
+  label: string;
+  totalKitty: number;
+  totalSpent: number;
+  surplus: number;
+  expenses: (Expense & { profiles: Profile })[];
+  weeks: WeekWithExpenses[];
+}
+
+function groupByMonth(weeks: WeekWithExpenses[]): GroupedData[] {
+  const groups: Record<string, GroupedData> = {};
+
+  for (const week of weeks) {
+    const date = new Date(week.start_date);
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    const label = date.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
+
+    if (!groups[key]) {
+      groups[key] = { label, totalKitty: 0, totalSpent: 0, surplus: 0, expenses: [], weeks: [] };
+    }
+    groups[key].totalKitty += Number(week.total_kitty);
+    groups[key].expenses.push(...week.expenses);
+    groups[key].weeks.push(week);
+  }
+
+  for (const group of Object.values(groups)) {
+    group.totalSpent = calculateTotalSpent(group.expenses);
+    group.surplus = group.totalKitty - group.totalSpent;
+  }
+
+  return Object.entries(groups)
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([, v]) => v);
+}
+
+function groupByYear(weeks: WeekWithExpenses[]): GroupedData[] {
+  const groups: Record<string, GroupedData> = {};
+
+  for (const week of weeks) {
+    const year = new Date(week.start_date).getFullYear().toString();
+
+    if (!groups[year]) {
+      groups[year] = { label: year, totalKitty: 0, totalSpent: 0, surplus: 0, expenses: [], weeks: [] };
+    }
+    groups[year].totalKitty += Number(week.total_kitty);
+    groups[year].expenses.push(...week.expenses);
+    groups[year].weeks.push(week);
+  }
+
+  for (const group of Object.values(groups)) {
+    group.totalSpent = calculateTotalSpent(group.expenses);
+    group.surplus = group.totalKitty - group.totalSpent;
+  }
+
+  return Object.entries(groups)
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([, v]) => v);
+}
+
 export function HistoryView({ teamId }: HistoryViewProps) {
   const [weeks, setWeeks] = useState<WeekWithExpenses[]>([]);
-  const [expandedWeek, setExpandedWeek] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'week' | 'month' | 'year'>('week');
   const [loading, setLoading] = useState(true);
 
@@ -61,6 +120,20 @@ export function HistoryView({ teamId }: HistoryViewProps) {
     setWeeks(weeksWithExpenses);
     setLoading(false);
   }
+
+  const groupedData = useMemo(() => {
+    if (viewMode === 'month') return groupByMonth(weeks);
+    if (viewMode === 'year') return groupByYear(weeks);
+    // Week mode: each week is its own group
+    return weeks.map((week) => ({
+      label: week.label,
+      totalKitty: Number(week.total_kitty),
+      totalSpent: calculateTotalSpent(week.expenses),
+      surplus: Number(week.total_kitty) - calculateTotalSpent(week.expenses),
+      expenses: week.expenses,
+      weeks: [week],
+    }));
+  }, [weeks, viewMode]);
 
   async function exportCSV() {
     if (weeks.length === 0) return;
@@ -120,33 +193,31 @@ export function HistoryView({ teamId }: HistoryViewProps) {
         </div>
       </div>
 
-      {weeks.length === 0 ? (
+      {groupedData.length === 0 ? (
         <p className="text-muted-foreground text-center py-8">
           No historical data yet.
         </p>
       ) : (
         <div className="space-y-4">
-          {weeks.map((week) => {
-            const totalSpent = calculateTotalSpent(week.expenses);
-            const surplus = Number(week.total_kitty) - totalSpent;
-            const isExpanded = expandedWeek === week.id;
+          {groupedData.map((group) => {
+            const isExpanded = expandedId === group.label;
 
             return (
-              <Card key={week.id}>
+              <Card key={group.label}>
                 <CardHeader
                   className="cursor-pointer"
                   onClick={() =>
-                    setExpandedWeek(isExpanded ? null : week.id)
+                    setExpandedId(isExpanded ? null : group.label)
                   }
                 >
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-base">{week.label}</CardTitle>
+                    <CardTitle className="text-base">{group.label}</CardTitle>
                     <div className="flex items-center gap-3">
                       <span className="text-sm text-muted-foreground">
-                        Spent: €{totalSpent.toFixed(2)}
+                        Spent: €{group.totalSpent.toFixed(2)}
                       </span>
-                      <Badge variant={surplus >= 0 ? 'secondary' : 'destructive'}>
-                        {surplus >= 0 ? '+' : ''}€{surplus.toFixed(2)}
+                      <Badge variant={group.surplus >= 0 ? 'secondary' : 'destructive'}>
+                        {group.surplus >= 0 ? '+' : ''}€{group.surplus.toFixed(2)}
                       </Badge>
                       <span className="text-muted-foreground">
                         {isExpanded ? '▲' : '▼'}
@@ -157,20 +228,27 @@ export function HistoryView({ teamId }: HistoryViewProps) {
                 {isExpanded && (
                   <CardContent>
                     <div className="text-sm space-y-1 mb-4">
-                      <p>Kitty: €{Number(week.total_kitty).toFixed(2)}</p>
-                      <p>Per volunteer: €{Number(week.allocation_per_volunteer).toFixed(2)}</p>
-                      {week.pooled_split_enabled && (
-                        <p>
-                          Pooled: {week.pooled_percentage}% team / {100 - week.pooled_percentage}% personal
-                        </p>
+                      <p>Total Kitty: €{group.totalKitty.toFixed(2)}</p>
+                      {viewMode !== 'week' && (
+                        <p>{group.weeks.length} week{group.weeks.length !== 1 ? 's' : ''}</p>
+                      )}
+                      {viewMode === 'week' && group.weeks[0] && (
+                        <>
+                          <p>Per volunteer: €{Number(group.weeks[0].allocation_per_volunteer).toFixed(2)}</p>
+                          {group.weeks[0].pooled_split_enabled && (
+                            <p>
+                              Pooled: {group.weeks[0].pooled_percentage}% team / {100 - group.weeks[0].pooled_percentage}% personal
+                            </p>
+                          )}
+                        </>
                       )}
                     </div>
                     <Separator className="mb-4" />
-                    {week.expenses.length === 0 ? (
+                    {group.expenses.length === 0 ? (
                       <p className="text-sm text-muted-foreground">No expenses</p>
                     ) : (
                       <div className="space-y-2">
-                        {week.expenses.map((expense) => (
+                        {group.expenses.map((expense) => (
                           <div
                             key={expense.id}
                             className={`flex items-center justify-between text-sm p-2 rounded ${

@@ -77,6 +77,16 @@ export function TeamCreateWizard({ userId, approvedInvites }: TeamCreateWizardPr
       role: 'admin',
     });
 
+    // Assign selected members' invites to this team
+    // When they sign up, they'll be auto-added via the assigned_team_id
+    if (selectedMembers.length > 0) {
+      await supabase
+        .from('invite_requests')
+        .update({ assigned_team_id: team.id, assigned_role: 'volunteer' })
+        .in('email', selectedMembers)
+        .eq('status', 'approved');
+    }
+
     // Create the initial week
     const { start, end } = getCurrentWeekDates();
     await supabase.from('weeks').insert({

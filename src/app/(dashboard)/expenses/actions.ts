@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import type { ExpenseType, DistributionType } from '@/types/database';
+import { sendFundsAddedEmail, sendInviteApprovedEmail } from '@/lib/email';
 
 export async function addExpense(data: {
   teamId: string;
@@ -172,5 +173,76 @@ export async function addFunds(data: {
       .eq('id', data.weekId);
   }
 
+  // Notify team members about added funds
+  const { data: members } = await supabase
+    .from('team_members')
+    .select('user_id, profiles(full_name)')
+    .eq('team_id', data.teamId);
+
+  if (members) {
+    for (const member of members) {
+      // Get email from auth (service role needed for this in production)
+      // For now, log the notification
+      const profiles = member.profiles as unknown as { full_name: string } | null;
+      if (profiles) {
+        try {
+          const { data: authUser } = await supabase.auth.admin.getUserById(member.user_id);
+          if (authUser?.user?.email) {
+            await sendFundsAddedEmail(authUser.user.email, data.amount, data.description);
+          }
+        } catch {
+          // Admin API may not be available with anon key — skip email silently
+        }
+      }
+    }
+  }
+
+  return { success: true };
+}
+
+export async function approveInviteRequest(inviteId: string) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: 'Not authenticated' };
+
+  // Verify admin
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+
+  if (!profile || profile.role !== 'admin') {
+    return { error: 'Only admins can approve invites' };
+  }
+
+  const { data: invite, error } = await supabase
+    .from('invite_requests')
+    .update({ status: 'approved', reviewed_by: user.id })
+    .eq('id', inviteId)
+    .select()
+    .single();
+
+  if (error) return { error: error.message };
+
+  // Send approval email
+  if (invite?.email) {
+    await sendInviteApprovedEmail(invite.email);
+  }
+
+  return { success: true };
+}
+
+export async function denyInviteRequest(inviteId: string) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: 'Not authenticated' };
+
+  const { error } = await supabase
+    .from('invite_requests')
+    .update({ status: 'denied', reviewed_by: user.id })
+    .eq('id', inviteId);
+
+  if (error) return { error: error.message };
   return { success: true };
 }

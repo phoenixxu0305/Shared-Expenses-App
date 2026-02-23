@@ -44,6 +44,7 @@ export function ExpenseForm({
   const [expenseType, setExpenseType] = useState<ExpenseType>('personal');
   const [amount, setAmount] = useState(0);
   const [description, setDescription] = useState('');
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
   const userExpenses = expenses.filter((e) => e.user_id === userId);
@@ -60,6 +61,20 @@ export function ExpenseForm({
 
     setLoading(true);
 
+    let receiptUrl: string | undefined;
+    if (receiptFile) {
+      const formData = new FormData();
+      formData.append('file', receiptFile);
+      const uploadRes = await fetch('/api/upload', { method: 'POST', body: formData });
+      const uploadData = await uploadRes.json();
+      if (uploadData.error) {
+        toast.error(`Upload failed: ${uploadData.error}`);
+        setLoading(false);
+        return;
+      }
+      receiptUrl = uploadData.url;
+    }
+
     const result = await addExpense({
       teamId,
       weekId,
@@ -67,6 +82,7 @@ export function ExpenseForm({
       amount,
       description: description.trim(),
       type: expenseType,
+      receiptUrl,
     });
 
     if (result.error) {
@@ -140,6 +156,18 @@ export function ExpenseForm({
               placeholder="What was this expense for?"
               required
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Receipt (optional)</Label>
+            <Input
+              type="file"
+              accept="image/*,.pdf"
+              onChange={(e) => setReceiptFile(e.target.files?.[0] || null)}
+            />
+            {receiptFile && (
+              <p className="text-xs text-muted-foreground">{receiptFile.name}</p>
+            )}
           </div>
 
           <div className="flex justify-end gap-2">

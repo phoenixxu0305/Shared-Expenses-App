@@ -88,9 +88,11 @@ CREATE TABLE fund_additions (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Auto-create profile on signup
+-- Auto-create profile on signup and auto-join assigned team
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+  invite_record RECORD;
 BEGIN
   INSERT INTO public.profiles (id, full_name, avatar_url, role)
   VALUES (
@@ -99,6 +101,28 @@ BEGIN
     NEW.raw_user_meta_data->>'avatar_url',
     COALESCE((NEW.raw_user_meta_data->>'role')::user_role, 'volunteer')
   );
+
+  -- Auto-join team if there's an approved invite with an assigned team
+  SELECT * INTO invite_record
+  FROM public.invite_requests
+  WHERE email = NEW.email
+    AND status = 'approved'
+    AND assigned_team_id IS NOT NULL
+  LIMIT 1;
+
+  IF invite_record IS NOT NULL THEN
+    INSERT INTO public.team_members (team_id, user_id, role)
+    VALUES (
+      invite_record.assigned_team_id,
+      NEW.id,
+      COALESCE(invite_record.assigned_role::user_role, 'volunteer')
+    );
+
+    UPDATE public.profiles
+    SET role = COALESCE(invite_record.assigned_role::user_role, 'volunteer')
+    WHERE id = NEW.id;
+  END IF;
+
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

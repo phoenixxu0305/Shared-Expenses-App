@@ -76,6 +76,19 @@ export function ExpenseList({
               </div>
               <p className="text-sm text-muted-foreground">
                 {new Date(expense.created_at).toLocaleDateString()}
+                {expense.receipt_url && (
+                  <>
+                    {' · '}
+                    <a
+                      href={expense.receipt_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary underline"
+                    >
+                      Receipt
+                    </a>
+                  </>
+                )}
               </p>
             </div>
             <div className="flex items-center gap-3 ml-4">

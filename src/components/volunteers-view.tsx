@@ -10,6 +10,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
+import { approveInviteRequest, denyInviteRequest } from '@/app/(dashboard)/expenses/actions';
 
 interface VolunteersViewProps {
   profile: Profile | null;
@@ -83,17 +84,12 @@ export function VolunteersView({ profile, teamId, role }: VolunteersViewProps) {
   }
 
   async function handleInviteAction(inviteId: string, action: 'approved' | 'denied') {
-    const supabase = createClient();
-    const { error } = await supabase
-      .from('invite_requests')
-      .update({
-        status: action,
-        reviewed_by: profile?.id,
-      })
-      .eq('id', inviteId);
+    const result = action === 'approved'
+      ? await approveInviteRequest(inviteId)
+      : await denyInviteRequest(inviteId);
 
-    if (error) {
-      toast.error(error.message);
+    if (result.error) {
+      toast.error(result.error);
     } else {
       toast.success(`Invite ${action}`);
       loadData();

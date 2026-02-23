@@ -108,9 +108,16 @@ export function TeamDashboard({ profile, membership }: TeamDashboardProps) {
         </div>
         <div className="flex gap-2">
           {role === 'admin' && (
-            <Button variant="outline" onClick={() => setShowAddFunds(true)}>
-              Add Funds
-            </Button>
+            <>
+              <Link href="/team/settings">
+                <Button variant="ghost" size="icon" title="Team Settings">
+                  &#9881;
+                </Button>
+              </Link>
+              <Button variant="outline" onClick={() => setShowAddFunds(true)}>
+                Add Funds
+              </Button>
+            </>
           )}
           <Button onClick={() => setShowExpenseForm(true)}>
             Add Expense
