@@ -13,6 +13,7 @@ import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { Team, TeamMember, Week, Profile, UserRole } from '@/types/database';
 import { toast } from 'sonner';
+import { addTeamMember } from '@/app/(dashboard)/team/actions';
 
 interface TeamSettingsProps {
   team: Team;
@@ -113,12 +114,13 @@ export function TeamSettings({ team, members, currentWeek, availableUsers }: Tea
   async function addMember() {
     if (!selectedUserId) return;
     setAddingMember(true);
-    const supabase = createClient();
-    const { error } = await supabase
-      .from('team_members')
-      .insert({ team_id: team.id, user_id: selectedUserId, role: selectedRole });
+    const result = await addTeamMember({
+      teamId: team.id,
+      userId: selectedUserId,
+      role: selectedRole,
+    });
 
-    if (error) toast.error(error.message);
+    if (result.error) toast.error(result.error);
     else {
       toast.success('Member added');
       setSelectedUserId('');

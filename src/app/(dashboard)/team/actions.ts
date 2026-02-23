@@ -78,6 +78,34 @@ export async function createTeam(data: {
   return { success: true, teamId: team.id };
 }
 
+export async function addTeamMember(data: {
+  teamId: string;
+  userId: string;
+  role: 'volunteer' | 'treasurer';
+}) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: 'Not authenticated' };
+
+  const serviceClient = await createServiceClient();
+
+  // Verify caller is admin
+  const { data: profile } = await serviceClient
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+
+  if (profile?.role !== 'admin') return { error: 'Only admins can add members' };
+
+  const { error } = await serviceClient
+    .from('team_members')
+    .insert({ team_id: data.teamId, user_id: data.userId, role: data.role });
+
+  if (error) return { error: error.message };
+  return { success: true };
+}
+
 export async function ensureCurrentWeek(teamId: string) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
