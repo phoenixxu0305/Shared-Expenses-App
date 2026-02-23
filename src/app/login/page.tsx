@@ -9,7 +9,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { useRouter } from 'next/navigation';
-import { submitInviteRequest } from '@/app/(dashboard)/expenses/actions';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -98,16 +97,20 @@ export default function LoginPage() {
     const note = formData.get('note') as string;
 
     try {
-      const result = await submitInviteRequest({ email, note: note || null });
+      const res = await fetch('/api/invite-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, note: note || null }),
+      });
+      const result = await res.json();
 
       if (result.error) {
         setError(result.error);
       } else {
         setSuccess('Your request has been submitted. An admin will review it shortly.');
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      setError(`Something went wrong: ${message}`);
+    } catch {
+      setError('Something went wrong. Please try again.');
     }
     setLoading(false);
   }
