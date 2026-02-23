@@ -12,18 +12,27 @@ export async function sendEmail({
   html: string;
 }) {
   if (!process.env.RESEND_API_KEY) {
-    console.log(`[Email] Would send to ${to}: ${subject}`);
+    console.log(`[Email] No RESEND_API_KEY — would send to ${to}: ${subject}`);
     return;
   }
 
-  const fromEmail = process.env.ADMIN_EMAIL || 'noreply@expenseshare.app';
+  // Use verified domain or Resend's default sender for free tier
+  const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
 
-  await resend.emails.send({
-    from: `ExpenseShare <${fromEmail}>`,
-    to,
-    subject,
-    html,
-  });
+  try {
+    const { error } = await resend.emails.send({
+      from: `ExpenseShare <${fromEmail}>`,
+      to,
+      subject,
+      html,
+    });
+
+    if (error) {
+      console.error(`[Email] Failed to send to ${to}:`, error);
+    }
+  } catch (err) {
+    console.error(`[Email] Error sending to ${to}:`, err);
+  }
 }
 
 export async function sendTeamInviteEmail(email: string, teamName: string) {
