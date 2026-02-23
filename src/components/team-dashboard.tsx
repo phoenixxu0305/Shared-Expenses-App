@@ -73,7 +73,14 @@ export function TeamDashboard({ profile, membership }: TeamDashboardProps) {
   useRealtimeSubscription('fund_additions', membership?.team_id, loadData);
 
   if (!profile) {
-    return <DashboardSkeleton />;
+    return (
+      <div className="max-w-lg mx-auto text-center py-12 space-y-4">
+        <h2 className="text-2xl font-bold">Welcome!</h2>
+        <p className="text-muted-foreground">
+          Setting up your profile. Please refresh the page.
+        </p>
+      </div>
+    );
   }
 
   if (!membership) {

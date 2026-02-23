@@ -52,17 +52,22 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Redirect to onboarding if user has no full_name set
-  if (user && pathname !== '/onboarding' && !isPublicRoute) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('full_name')
-      .eq('id', user.id)
-      .single();
+  // Skip API routes and static assets to avoid unnecessary DB queries
+  if (user && pathname !== '/onboarding' && !isPublicRoute && !pathname.startsWith('/api')) {
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', user.id)
+        .single();
 
-    if (profile && (!profile.full_name || profile.full_name.trim() === '')) {
-      const url = request.nextUrl.clone();
-      url.pathname = '/onboarding';
-      return NextResponse.redirect(url);
+      if (profile && (!profile.full_name || profile.full_name.trim() === '')) {
+        const url = request.nextUrl.clone();
+        url.pathname = '/onboarding';
+        return NextResponse.redirect(url);
+      }
+    } catch {
+      // If profile query fails (e.g. table doesn't exist yet), continue normally
     }
   }
 
