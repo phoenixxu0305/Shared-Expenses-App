@@ -2,7 +2,8 @@
 
 import { createClient } from '@/lib/supabase/server';
 import type { ExpenseType, DistributionType } from '@/types/database';
-import { sendFundsAddedEmail, sendInviteApprovedEmail } from '@/lib/email';
+import { sendFundsAddedEmail, sendInviteApprovedEmail, sendNewInviteRequestEmail } from '@/lib/email';
+import { createServiceClient } from '@/lib/supabase/server';
 
 export async function addExpense(data: {
   teamId: string;
@@ -228,6 +229,38 @@ export async function approveInviteRequest(inviteId: string) {
   // Send approval email
   if (invite?.email) {
     await sendInviteApprovedEmail(invite.email);
+  }
+
+  return { success: true };
+}
+
+export async function submitInviteRequest(data: { email: string; note: string | null }) {
+  const serviceClient = await createServiceClient();
+
+  // Insert the invite request
+  const { error } = await serviceClient
+    .from('invite_requests')
+    .insert({ email: data.email, note: data.note });
+
+  if (error) return { error: error.message };
+
+  // Find all admin users and notify them
+  const { data: admins } = await serviceClient
+    .from('profiles')
+    .select('id')
+    .eq('role', 'admin');
+
+  if (admins) {
+    for (const admin of admins) {
+      try {
+        const { data: authUser } = await serviceClient.auth.admin.getUserById(admin.id);
+        if (authUser?.user?.email) {
+          await sendNewInviteRequestEmail(authUser.user.email, data.email, data.note);
+        }
+      } catch {
+        // Skip if email fails
+      }
+    }
   }
 
   return { success: true };

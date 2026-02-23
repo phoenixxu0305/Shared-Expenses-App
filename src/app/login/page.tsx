@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { useRouter } from 'next/navigation';
+import { submitInviteRequest } from '@/app/(dashboard)/expenses/actions';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -96,13 +97,10 @@ export default function LoginPage() {
     const email = formData.get('email') as string;
     const note = formData.get('note') as string;
 
-    const supabase = createClient();
-    const { error } = await supabase
-      .from('invite_requests')
-      .insert({ email, note: note || null });
+    const result = await submitInviteRequest({ email, note: note || null });
 
-    if (error) {
-      setError(error.message);
+    if (result.error) {
+      setError(result.error);
     } else {
       setSuccess('Your request has been submitted. An admin will review it shortly.');
     }

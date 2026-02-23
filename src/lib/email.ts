@@ -69,6 +69,23 @@ export async function sendFundsAddedEmail(
   });
 }
 
+export async function sendNewInviteRequestEmail(
+  adminEmail: string,
+  requesterEmail: string,
+  note: string | null
+) {
+  await sendEmail({
+    to: adminEmail,
+    subject: 'New invite request - ExpenseShare',
+    html: `
+      <h2>New Invite Request</h2>
+      <p><strong>${requesterEmail}</strong> has requested to join ExpenseShare.</p>
+      ${note ? `<p>Note: "${note}"</p>` : ''}
+      <p>Log in to review and approve or deny this request.</p>
+    `,
+  });
+}
+
 export async function sendInviteApprovedEmail(email: string) {
   await sendEmail({
     to: email,
