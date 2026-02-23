@@ -1,0 +1,82 @@
+import { Resend } from 'resend';
+
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+export async function sendEmail({
+  to,
+  subject,
+  html,
+}: {
+  to: string;
+  subject: string;
+  html: string;
+}) {
+  if (!process.env.RESEND_API_KEY) {
+    console.log(`[Email] Would send to ${to}: ${subject}`);
+    return;
+  }
+
+  const fromEmail = process.env.ADMIN_EMAIL || 'noreply@expenseshare.app';
+
+  await resend.emails.send({
+    from: `ExpenseShare <${fromEmail}>`,
+    to,
+    subject,
+    html,
+  });
+}
+
+export async function sendTeamInviteEmail(email: string, teamName: string) {
+  await sendEmail({
+    to: email,
+    subject: `You've been added to ${teamName} on ExpenseShare`,
+    html: `
+      <h2>Welcome to ${teamName}!</h2>
+      <p>You've been added to a team on ExpenseShare. Sign in to view your team and start tracking expenses.</p>
+      <p><a href="${process.env.NEXT_PUBLIC_SUPABASE_URL ? '' : 'http://localhost:3000'}/login">Sign In</a></p>
+    `,
+  });
+}
+
+export async function sendLowBalanceEmail(
+  email: string,
+  name: string,
+  remaining: number
+) {
+  await sendEmail({
+    to: email,
+    subject: 'Low balance alert - ExpenseShare',
+    html: `
+      <h2>Low Balance Alert</h2>
+      <p>Hi ${name}, your remaining personal allocation is <strong>${remaining.toFixed(2)}</strong>.</p>
+    `,
+  });
+}
+
+export async function sendFundsAddedEmail(
+  email: string,
+  amount: number,
+  description: string
+) {
+  await sendEmail({
+    to: email,
+    subject: 'Funds added - ExpenseShare',
+    html: `
+      <h2>Funds Added</h2>
+      <p><strong>${amount.toFixed(2)}</strong> has been added to the team kitty.</p>
+      <p>${description}</p>
+    `,
+  });
+}
+
+export async function sendInviteApprovedEmail(email: string) {
+  await sendEmail({
+    to: email,
+    subject: 'Your ExpenseShare access has been approved!',
+    html: `
+      <h2>Access Approved!</h2>
+      <p>Your request to join ExpenseShare has been approved. You can now sign up and join your team.</p>
+      <p><a href="${process.env.NEXT_PUBLIC_SUPABASE_URL ? '' : 'http://localhost:3000'}/login">Sign Up Now</a></p>
+    `,
+  });
+}
