@@ -17,12 +17,18 @@ export default async function HomePage() {
 
   // If no profile exists, create one on the fly
   if (!profile) {
+    // First user becomes admin automatically
+    const { count: existingProfiles } = await supabase
+      .from('profiles')
+      .select('*', { count: 'exact', head: true });
+    const assignedRole = (existingProfiles === 0 || existingProfiles === null) ? 'admin' : 'volunteer';
+
     const { error: insertError } = await supabase
       .from('profiles')
       .upsert({
         id: user.id,
         full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || '',
-        role: 'volunteer',
+        role: assignedRole,
       });
 
     if (insertError) {
@@ -33,7 +39,7 @@ export default async function HomePage() {
             id: user.id,
             full_name: user.email || 'User',
             avatar_url: null,
-            role: 'volunteer',
+            role: assignedRole,
             created_at: new Date().toISOString(),
           }}
           membership={null}
