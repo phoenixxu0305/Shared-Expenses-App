@@ -245,32 +245,38 @@ export async function approveInviteRequest(inviteId: string) {
 }
 
 export async function submitInviteRequest(data: { email: string; note: string | null }) {
-  const serviceClient = await createServiceClient();
+  // Use anon client for insert — RLS allows anyone to create invite requests
+  const supabase = await createClient();
 
-  // Insert the invite request
-  const { error } = await serviceClient
+  const { error } = await supabase
     .from('invite_requests')
     .insert({ email: data.email, note: data.note });
 
   if (error) return { error: error.message };
 
-  // Find all admin users and notify them
-  const { data: admins } = await serviceClient
-    .from('profiles')
-    .select('id')
-    .eq('role', 'admin');
+  // Notify admins via email (requires service client for auth.admin API)
+  try {
+    const serviceClient = await createServiceClient();
 
-  if (admins) {
-    for (const admin of admins) {
-      try {
-        const { data: authUser } = await serviceClient.auth.admin.getUserById(admin.id);
-        if (authUser?.user?.email) {
-          await sendNewInviteRequestEmail(authUser.user.email, data.email, data.note);
+    const { data: admins } = await serviceClient
+      .from('profiles')
+      .select('id')
+      .eq('role', 'admin');
+
+    if (admins) {
+      for (const admin of admins) {
+        try {
+          const { data: authUser } = await serviceClient.auth.admin.getUserById(admin.id);
+          if (authUser?.user?.email) {
+            await sendNewInviteRequestEmail(authUser.user.email, data.email, data.note);
+          }
+        } catch {
+          // Skip if email send fails
         }
-      } catch {
-        // Skip if email fails
       }
     }
+  } catch {
+    // Service client unavailable — invite was still saved, skip email
   }
 
   return { success: true };
