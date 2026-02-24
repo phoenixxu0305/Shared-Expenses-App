@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Week, Expense, Profile } from '@/types/database';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,40 +10,230 @@ import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { calculateTotalSpent } from '@/lib/expense-calculations';
 import { HistorySkeleton } from '@/components/loading-skeletons';
-import {
-  PieChart, Pie, Cell, Tooltip, Legend,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid,
-} from 'recharts';
-import React from 'react';
 
-class ChartErrorBoundary extends React.Component<
-  { children: React.ReactNode },
-  { error: string | null }
-> {
-  constructor(props: { children: React.ReactNode }) {
-    super(props);
-    this.state = { error: null };
-  }
-  static getDerivedStateFromError(err: Error) {
-    return { error: err.message };
-  }
-  render() {
-    if (this.state.error) {
-      return (
-        <div className="p-4 bg-red-50 text-red-700 rounded text-sm">
-          Chart error: {this.state.error}
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
-const CHART_COLORS = [
+/* ─── Pure SVG chart colours ─── */
+const COLORS = [
   '#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6',
   '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16',
 ];
 
+/* ─── SVG Pie Chart (no dependencies) ─── */
+function SvgPieChart({ data }: { data: { name: string; value: number }[] }) {
+  const total = data.reduce((s, d) => s + d.value, 0);
+  if (total === 0) return null;
+
+  const size = 220;
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = 80;
+
+  let cumulative = 0;
+  const slices = data.map((d, i) => {
+    const fraction = d.value / total;
+    const startAngle = cumulative * 2 * Math.PI - Math.PI / 2;
+    cumulative += fraction;
+    const endAngle = cumulative * 2 * Math.PI - Math.PI / 2;
+
+    const largeArc = fraction > 0.5 ? 1 : 0;
+    const x1 = cx + r * Math.cos(startAngle);
+    const y1 = cy + r * Math.sin(startAngle);
+    const x2 = cx + r * Math.cos(endAngle);
+    const y2 = cy + r * Math.sin(endAngle);
+
+    // Label position
+    const midAngle = (startAngle + endAngle) / 2;
+    const labelR = r + 22;
+    const lx = cx + labelR * Math.cos(midAngle);
+    const ly = cy + labelR * Math.sin(midAngle);
+    const pct = (fraction * 100).toFixed(0);
+
+    const path =
+      data.length === 1
+        ? `M ${cx} ${cy - r} A ${r} ${r} 0 1 1 ${cx - 0.01} ${cy - r} Z`
+        : `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
+
+    return { path, color: COLORS[i % COLORS.length], label: d.name, pct, lx, ly, value: d.value };
+  });
+
+  return (
+    <div>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        {slices.map((s, i) => (
+          <path key={i} d={s.path} fill={s.color} stroke="white" strokeWidth={2}>
+            <title>{`${s.label}: €${s.value.toFixed(2)} (${s.pct}%)`}</title>
+          </path>
+        ))}
+        {slices.map((s, i) => (
+          <text
+            key={`t-${i}`}
+            x={s.lx}
+            y={s.ly}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fontSize={10}
+            fill="currentColor"
+          >
+            {s.pct}%
+          </text>
+        ))}
+      </svg>
+      {/* Legend */}
+      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 justify-center">
+        {slices.map((s, i) => (
+          <div key={i} className="flex items-center gap-1 text-xs">
+            <span
+              className="inline-block w-3 h-3 rounded-sm shrink-0"
+              style={{ backgroundColor: s.color }}
+            />
+            <span className="truncate max-w-[120px]">{s.label}</span>
+            <span className="text-muted-foreground">&euro;{s.value.toFixed(2)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── SVG Horizontal Bar Chart (no dependencies) ─── */
+function SvgBarChart({ data }: { data: { name: string; value: number }[] }) {
+  if (data.length === 0) return null;
+
+  const maxValue = Math.max(...data.map((d) => d.value));
+  const barH = 28;
+  const gap = 6;
+  const labelW = 90;
+  const chartW = 300;
+  const totalW = labelW + chartW + 60;
+  const totalH = data.length * (barH + gap) + gap;
+
+  return (
+    <svg width="100%" viewBox={`0 0 ${totalW} ${totalH}`} className="max-w-full">
+      {data.map((d, i) => {
+        const y = gap + i * (barH + gap);
+        const barWidth = maxValue > 0 ? (d.value / maxValue) * chartW : 0;
+        return (
+          <g key={i}>
+            <text
+              x={labelW - 6}
+              y={y + barH / 2}
+              textAnchor="end"
+              dominantBaseline="middle"
+              fontSize={11}
+              fill="currentColor"
+            >
+              {d.name.length > 12 ? d.name.slice(0, 12) + '...' : d.name}
+            </text>
+            <rect
+              x={labelW}
+              y={y}
+              width={barWidth}
+              height={barH}
+              rx={4}
+              fill={COLORS[i % COLORS.length]}
+            >
+              <title>{`${d.name}: €${d.value.toFixed(2)}`}</title>
+            </rect>
+            <text
+              x={labelW + barWidth + 6}
+              y={y + barH / 2}
+              dominantBaseline="middle"
+              fontSize={11}
+              fill="currentColor"
+            >
+              &euro;{d.value.toFixed(2)}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+/* ─── ExpenseCharts: pure SVG, zero dependencies ─── */
+function ExpenseCharts({ expenses }: { expenses: (Expense & { profiles: Profile })[] }) {
+  const active = useMemo(() => expenses.filter((e) => !e.is_deleted), [expenses]);
+
+  const descData = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const e of active) {
+      const desc = e.description || 'Other';
+      map[desc] = (map[desc] || 0) + Number(e.amount);
+    }
+    return Object.entries(map)
+      .sort(([, a], [, b]) => b - a)
+      .map(([name, value]) => ({ name, value: Math.round(value * 100) / 100 }));
+  }, [active]);
+
+  const spenderData = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const e of active) {
+      const name = e.profiles?.full_name || 'Unknown';
+      map[name] = (map[name] || 0) + Number(e.amount);
+    }
+    return Object.entries(map)
+      .sort(([, a], [, b]) => b - a)
+      .map(([name, value]) => ({ name, value: Math.round(value * 100) / 100 }));
+  }, [active]);
+
+  const typeData = useMemo(() => {
+    let personal = 0;
+    let team = 0;
+    for (const e of active) {
+      if (e.type === 'team') team += Number(e.amount);
+      else personal += Number(e.amount);
+    }
+    const d: { name: string; value: number }[] = [];
+    if (personal > 0) d.push({ name: 'Personal', value: Math.round(personal * 100) / 100 });
+    if (team > 0) d.push({ name: 'Team', value: Math.round(team * 100) / 100 });
+    return d;
+  }, [active]);
+
+  if (active.length === 0) return null;
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+      {/* Cost Distribution by Item */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium text-muted-foreground">
+            Cost Distribution by Item
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col items-center">
+          <SvgPieChart data={descData} />
+        </CardContent>
+      </Card>
+
+      {/* Spending by Member */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium text-muted-foreground">
+            Spending by Member
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <SvgBarChart data={spenderData} />
+        </CardContent>
+      </Card>
+
+      {/* Personal vs Team */}
+      {typeData.length > 1 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Personal vs Team
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col items-center">
+            <SvgPieChart data={typeData} />
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+/* ─── Grouping helpers ─── */
 interface HistoryViewProps {
   teamId: string | undefined;
   isAdmin?: boolean;
@@ -101,167 +291,7 @@ function groupByYear(weeks: WeekWithExpenses[]): GroupedData[] {
   return Object.entries(groups).sort(([a], [b]) => b.localeCompare(a)).map(([, v]) => v);
 }
 
-function useContainerWidth() {
-  const ref = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(350);
-  useEffect(() => {
-    if (!ref.current) return;
-    const ro = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const w = entry.contentRect.width;
-        if (w > 0) setWidth(w);
-      }
-    });
-    ro.observe(ref.current);
-    if (ref.current.clientWidth > 0) setWidth(ref.current.clientWidth);
-    return () => ro.disconnect();
-  }, []);
-  return { ref, width };
-}
-
-function ExpenseCharts({ expenses }: { expenses: (Expense & { profiles: Profile })[] }) {
-  const [mounted, setMounted] = useState(false);
-  const { ref: containerRef, width: containerWidth } = useContainerWidth();
-
-  useEffect(() => { setMounted(true); }, []);
-
-  const active = useMemo(() => expenses.filter((e) => !e.is_deleted), [expenses]);
-
-  const descData = useMemo(() => {
-    const map: Record<string, number> = {};
-    for (const e of active) {
-      const desc = e.description || 'Other';
-      map[desc] = (map[desc] || 0) + Number(e.amount);
-    }
-    return Object.entries(map).sort(([, a], [, b]) => b - a)
-      .map(([name, value]) => ({ name, value: Math.round(value * 100) / 100 }));
-  }, [active]);
-
-  const spenderData = useMemo(() => {
-    const map: Record<string, number> = {};
-    for (const e of active) {
-      const name = e.profiles?.full_name || 'Unknown';
-      map[name] = (map[name] || 0) + Number(e.amount);
-    }
-    return Object.entries(map).sort(([, a], [, b]) => b - a)
-      .map(([name, value]) => ({ name, value: Math.round(value * 100) / 100 }));
-  }, [active]);
-
-  const typeData = useMemo(() => {
-    let personal = 0;
-    let team = 0;
-    for (const e of active) {
-      if (e.type === 'team') team += Number(e.amount);
-      else personal += Number(e.amount);
-    }
-    const d = [];
-    if (personal > 0) d.push({ name: 'Personal', value: Math.round(personal * 100) / 100 });
-    if (team > 0) d.push({ name: 'Team', value: Math.round(team * 100) / 100 });
-    return d;
-  }, [active]);
-
-  if (active.length === 0) return null;
-
-  // Compute chart size based on measured container
-  const chartW = Math.min(containerWidth > 100 ? containerWidth : 350, 400);
-  const chartH = 260;
-  const pieR = Math.min(75, chartW / 5);
-
-  return (
-    <div ref={containerRef} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
-      {mounted && (
-        <>
-          {/* Cost Distribution by Item */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Cost Distribution by Item
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex justify-center">
-              <PieChart width={chartW} height={chartH}>
-                <Pie
-                  data={descData}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={pieR}
-                  label={(props) => {
-                    const n = String(props.name || '');
-                    const pct = (Number(props.percent || 0) * 100).toFixed(0);
-                    return `${n.length > 12 ? n.slice(0, 12) + '...' : n} ${pct}%`;
-                  }}
-                  labelLine={false}
-                >
-                  {descData.map((_, i) => (
-                    <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value) => `€${Number(value).toFixed(2)}`} />
-              </PieChart>
-            </CardContent>
-          </Card>
-
-          {/* Spending by Member */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Spending by Member
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex justify-center">
-              <BarChart
-                width={chartW}
-                height={chartH}
-                data={spenderData}
-                layout="vertical"
-                margin={{ left: 10, right: 20, top: 5, bottom: 5 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" tickFormatter={(v) => `€${v}`} />
-                <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 12 }} />
-                <Tooltip formatter={(value) => `€${Number(value).toFixed(2)}`} />
-                <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </CardContent>
-          </Card>
-
-          {/* Personal vs Team */}
-          {typeData.length > 1 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Personal vs Team
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="flex justify-center">
-                <PieChart width={chartW} height={chartH}>
-                  <Pie
-                    data={typeData}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={pieR}
-                    label={(props) => `${props.name} ${(Number(props.percent || 0) * 100).toFixed(0)}%`}
-                    labelLine={false}
-                  >
-                    <Cell fill="#3b82f6" />
-                    <Cell fill="#f59e0b" />
-                  </Pie>
-                  <Tooltip formatter={(value) => `€${Number(value).toFixed(2)}`} />
-                  <Legend />
-                </PieChart>
-              </CardContent>
-            </Card>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
+/* ─── Main HistoryView ─── */
 export function HistoryView({ teamId, isAdmin = false }: HistoryViewProps) {
   const [weeks, setWeeks] = useState<WeekWithExpenses[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -412,9 +442,7 @@ export function HistoryView({ teamId, isAdmin = false }: HistoryViewProps) {
       </div>
 
       {/* Top-level charts */}
-      <ChartErrorBoundary>
-        <ExpenseCharts expenses={allVisibleExpenses} />
-      </ChartErrorBoundary>
+      <ExpenseCharts expenses={allVisibleExpenses} />
 
       {groupedData.length === 0 ? (
         <p className="text-muted-foreground text-center py-8">
@@ -464,9 +492,7 @@ export function HistoryView({ teamId, isAdmin = false }: HistoryViewProps) {
                       )}
                     </div>
 
-                    <ChartErrorBoundary>
-                      <ExpenseCharts expenses={group.expenses} />
-                    </ChartErrorBoundary>
+                    <ExpenseCharts expenses={group.expenses} />
 
                     <Separator className="mb-4" />
                     {group.expenses.length === 0 ? (
