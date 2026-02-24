@@ -318,7 +318,7 @@ export function HistoryView({ teamId, isAdmin = false }: HistoryViewProps) {
     for (const week of weeksData) {
       const { data: expenses } = await supabase
         .from('expenses')
-        .select('*, profiles(*)')
+        .select('*, profiles:user_id(*)')
         .eq('week_id', week.id)
         .order('created_at', { ascending: false });
       weeksWithExpenses.push({
