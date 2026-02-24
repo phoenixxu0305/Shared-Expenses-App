@@ -235,3 +235,158 @@ export async function ensureCurrentWeek(teamId: string) {
   if (error) return { error: error.message };
   return { week: newWeek, created: true };
 }
+
+export async function ensureMonthEndReview(teamId: string) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: 'Not authenticated' };
+
+  const serviceClient = await createServiceClient();
+
+  // Calculate previous month's key
+  const now = new Date();
+  const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const monthKey = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}`;
+  const monthLabel = prevMonth.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+
+  // Check if review already exists
+  const { data: existing } = await serviceClient
+    .from('month_end_reviews')
+    .select('*')
+    .eq('team_id', teamId)
+    .eq('month_key', monthKey)
+    .limit(1)
+    .single();
+
+  if (existing) return { review: existing };
+
+  // Calculate previous month date range
+  const monthStart = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}-01`;
+  const lastDay = new Date(prevMonth.getFullYear(), prevMonth.getMonth() + 1, 0).getDate();
+  const monthEnd = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+  // Get all weeks that started in the previous month
+  const { data: weeks } = await serviceClient
+    .from('weeks')
+    .select('id, total_kitty')
+    .eq('team_id', teamId)
+    .gte('start_date', monthStart)
+    .lte('start_date', monthEnd);
+
+  if (!weeks || weeks.length === 0) return { review: null };
+
+  const totalKitty = weeks.reduce((sum, w) => sum + Number(w.total_kitty), 0);
+  const weekIds = weeks.map((w) => w.id);
+
+  // Sum non-deleted expenses for those weeks
+  const { data: expenseRows } = await serviceClient
+    .from('expenses')
+    .select('amount')
+    .in('week_id', weekIds)
+    .eq('is_deleted', false);
+
+  const totalSpent = (expenseRows || []).reduce((sum, e) => sum + Number(e.amount), 0);
+  const surplus = totalKitty - totalSpent;
+
+  // If no surplus, auto-resolve as 'save'
+  const decision = surplus > 0 ? 'pending' : 'save';
+
+  const { data: review, error } = await serviceClient
+    .from('month_end_reviews')
+    .insert({
+      team_id: teamId,
+      month_key: monthKey,
+      month_label: monthLabel,
+      surplus_amount: surplus > 0 ? surplus : 0,
+      decision,
+      decided_at: surplus <= 0 ? new Date().toISOString() : null,
+    })
+    .select()
+    .single();
+
+  if (error) return { error: error.message };
+  return { review };
+}
+
+export async function resolveMonthEndReview(data: {
+  reviewId: string;
+  decision: 'carry_over' | 'save';
+  currentWeekId: string;
+}) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: 'Not authenticated' };
+
+  const serviceClient = await createServiceClient();
+
+  // Verify admin role
+  const { data: membership } = await serviceClient
+    .from('team_members')
+    .select('role, team_id')
+    .eq('user_id', user.id)
+    .limit(1);
+
+  // Get the review to check team membership
+  const { data: review } = await serviceClient
+    .from('month_end_reviews')
+    .select('*')
+    .eq('id', data.reviewId)
+    .single();
+
+  if (!review) return { error: 'Review not found' };
+
+  const adminMembership = (membership || []).find(
+    (m) => m.team_id === review.team_id && m.role === 'admin'
+  );
+  if (!adminMembership) return { error: 'Only admins can resolve month-end reviews' };
+
+  if (review.decision !== 'pending') return { error: 'Review already resolved' };
+
+  if (data.decision === 'carry_over') {
+    // Add surplus to current week's total_kitty
+    const { data: currentWeek } = await serviceClient
+      .from('weeks')
+      .select('total_kitty')
+      .eq('id', data.currentWeekId)
+      .single();
+
+    if (!currentWeek) return { error: 'Current week not found' };
+
+    const newKitty = Number(currentWeek.total_kitty) + Number(review.surplus_amount);
+
+    const { error: weekError } = await serviceClient
+      .from('weeks')
+      .update({ total_kitty: newKitty })
+      .eq('id', data.currentWeekId);
+
+    if (weekError) return { error: 'Failed to update week kitty: ' + weekError.message };
+
+    // Insert fund_additions audit record
+    const { error: fundError } = await serviceClient
+      .from('fund_additions')
+      .insert({
+        team_id: review.team_id,
+        week_id: data.currentWeekId,
+        amount: review.surplus_amount,
+        distribution_type: 'group',
+        description: `Month-end carry over from ${review.month_label}`,
+        added_by: user.id,
+      });
+
+    if (fundError) return { error: 'Failed to create fund addition record: ' + fundError.message };
+  }
+
+  // Update the review row
+  const { error: updateError } = await serviceClient
+    .from('month_end_reviews')
+    .update({
+      decision: data.decision,
+      decided_by: user.id,
+      decided_at: new Date().toISOString(),
+      applied_to_week_id: data.decision === 'carry_over' ? data.currentWeekId : null,
+    })
+    .eq('id', data.reviewId);
+
+  if (updateError) return { error: updateError.message };
+  return { success: true };
+}

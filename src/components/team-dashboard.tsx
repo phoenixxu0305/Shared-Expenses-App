@@ -2,13 +2,14 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import type { Profile, TeamMember, Team, Week, Expense } from '@/types/database';
+import type { Profile, TeamMember, Team, Week, Expense, MonthEndReview } from '@/types/database';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ExpenseForm } from '@/components/expense-form';
 import { ExpenseList } from '@/components/expense-list';
 import { AddFundsDialog } from '@/components/add-funds-dialog';
+import { MonthEndReviewBanner } from '@/components/month-end-review-banner';
 import { calculateTotalSpent, calculateRemaining } from '@/lib/expense-calculations';
 import { useRealtimeSubscription } from '@/hooks/use-realtime';
 import {
@@ -22,6 +23,7 @@ import Link from 'next/link';
 interface TeamDashboardProps {
   profile: Profile | null;
   memberships: (TeamMember & { teams: Team })[];
+  pendingReviews?: Record<string, MonthEndReview>;
 }
 
 interface TeamSectionData {
@@ -36,11 +38,13 @@ function TeamSection({
   profile,
   data,
   loadData,
+  pendingReview,
 }: {
   membership: TeamMember & { teams: Team };
   profile: Profile;
   data: TeamSectionData;
   loadData: () => void;
+  pendingReview?: MonthEndReview;
 }) {
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [showAddFunds, setShowAddFunds] = useState(false);
@@ -162,6 +166,15 @@ function TeamSection({
         </Card>
       )}
 
+      {/* Month-end review banner (admin only) */}
+      {role === 'admin' && pendingReview && week && (
+        <MonthEndReviewBanner
+          review={pendingReview}
+          currentWeekId={week.id}
+          onResolved={loadData}
+        />
+      )}
+
       {/* Expense list */}
       <div>
         <h3 className="text-lg font-semibold mb-4">Recent Expenses</h3>
@@ -211,7 +224,7 @@ function TeamSection({
   );
 }
 
-export function TeamDashboard({ profile, memberships }: TeamDashboardProps) {
+export function TeamDashboard({ profile, memberships, pendingReviews = {} }: TeamDashboardProps) {
   const [teamData, setTeamData] = useState<Record<string, TeamSectionData>>({});
 
   const role = memberships.length > 0 ? memberships[0].role : profile?.role;
@@ -333,6 +346,7 @@ export function TeamDashboard({ profile, memberships }: TeamDashboardProps) {
             profile={profile}
             data={teamData[m.team_id] || { week: null, expenses: [], memberCount: 0, members: [] }}
             loadData={loadAllData}
+            pendingReview={pendingReviews[m.team_id]}
           />
         </div>
       ))}

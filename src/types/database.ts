@@ -3,6 +3,7 @@ export type ExpenseType = 'personal' | 'team';
 export type InviteStatus = 'pending' | 'approved' | 'denied';
 export type InviteRole = 'treasurer' | 'volunteer';
 export type DistributionType = 'group' | 'personal' | 'split';
+export type ReviewDecision = 'pending' | 'carry_over' | 'save';
 
 export interface Profile {
   id: string;
@@ -76,6 +77,19 @@ export interface FundAddition {
   split_percentage: number | null;
   description: string;
   added_by: string;
+  created_at: string;
+}
+
+export interface MonthEndReview {
+  id: string;
+  team_id: string;
+  month_key: string;
+  month_label: string;
+  surplus_amount: number;
+  decision: ReviewDecision;
+  decided_by: string | null;
+  decided_at: string | null;
+  applied_to_week_id: string | null;
   created_at: string;
 }
 

@@ -1,7 +1,8 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { TeamDashboard } from '@/components/team-dashboard';
-import { ensureCurrentWeek } from '@/app/(dashboard)/team/actions';
+import { ensureCurrentWeek, ensureMonthEndReview } from '@/app/(dashboard)/team/actions';
+import type { MonthEndReview } from '@/types/database';
 
 export default async function HomePage() {
   const supabase = await createClient();
@@ -70,15 +71,21 @@ export default async function HomePage() {
 
   const allMemberships = memberships || [];
 
-  // Auto-create current week for each team
+  // Auto-create current week for each team & check month-end reviews
+  const pendingReviews: Record<string, MonthEndReview> = {};
   for (const m of allMemberships) {
     await ensureCurrentWeek(m.team_id);
+    const result = await ensureMonthEndReview(m.team_id);
+    if (result.review && result.review.decision === 'pending') {
+      pendingReviews[m.team_id] = result.review;
+    }
   }
 
   return (
     <TeamDashboard
       profile={profile}
       memberships={allMemberships}
+      pendingReviews={pendingReviews}
     />
   );
 }
