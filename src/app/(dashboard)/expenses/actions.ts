@@ -190,26 +190,23 @@ export async function addFunds(data: {
       .eq('id', data.weekId);
   }
 
-  // Notify team members about added funds
-  const { data: members } = await supabase
+  // Notify non-admin team members about added funds (they are the ones receiving funds)
+  const serviceClient = await createServiceClient();
+  const { data: members } = await serviceClient
     .from('team_members')
-    .select('user_id, profiles(full_name)')
-    .eq('team_id', data.teamId);
+    .select('user_id')
+    .eq('team_id', data.teamId)
+    .neq('role', 'admin');
 
   if (members) {
     for (const member of members) {
-      // Get email from auth (service role needed for this in production)
-      // For now, log the notification
-      const profiles = member.profiles as unknown as { full_name: string } | null;
-      if (profiles) {
-        try {
-          const { data: authUser } = await supabase.auth.admin.getUserById(member.user_id);
-          if (authUser?.user?.email) {
-            await sendFundsAddedEmail(authUser.user.email, data.amount, data.description);
-          }
-        } catch {
-          // Admin API may not be available with anon key — skip email silently
+      try {
+        const { data: authUser } = await serviceClient.auth.admin.getUserById(member.user_id);
+        if (authUser?.user?.email) {
+          await sendFundsAddedEmail(authUser.user.email, data.amount, data.description);
         }
+      } catch {
+        // Skip if email send fails
       }
     }
   }
