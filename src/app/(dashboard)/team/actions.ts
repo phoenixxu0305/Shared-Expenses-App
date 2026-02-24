@@ -7,7 +7,8 @@ import { getCurrentWeekDates, getWeekLabel } from '@/lib/expense-calculations';
 export async function createTeam(data: {
   teamName: string;
   bgColor: string;
-  selectedMembers: string[];
+  selectedMembers: string[]; // emails from invite requests
+  selectedUserIds?: string[]; // registered user IDs to add directly
   allocationPerVolunteer: number;
   pooledEnabled: boolean;
   pooledPercentage: number;
@@ -50,6 +51,17 @@ export async function createTeam(data: {
 
   if (memberError) return { error: 'Failed to add you as team member: ' + memberError.message };
 
+  // Insert selected registered users directly as volunteers
+  const directUserIds = data.selectedUserIds || [];
+  if (directUserIds.length > 0) {
+    const rows = directUserIds.map((uid) => ({
+      team_id: team.id,
+      user_id: uid,
+      role: 'volunteer' as const,
+    }));
+    await serviceClient.from('team_members').insert(rows);
+  }
+
   // Assign selected members' invites to this team
   if (data.selectedMembers.length > 0) {
     await serviceClient
@@ -60,7 +72,8 @@ export async function createTeam(data: {
   }
 
   // Create the initial week
-  const totalKitty = (data.selectedMembers.length + 1) * data.allocationPerVolunteer;
+  const totalMembers = 1 + directUserIds.length + data.selectedMembers.length;
+  const totalKitty = totalMembers * data.allocationPerVolunteer;
   const { start, end } = getCurrentWeekDates();
   const { error: weekError } = await serviceClient.from('weeks').insert({
     team_id: team.id,
@@ -104,6 +117,59 @@ export async function addTeamMember(data: {
 
   if (error) return { error: error.message };
   return { success: true };
+}
+
+export async function addMemberByEmail(data: {
+  teamId: string;
+  email: string;
+  role: 'volunteer' | 'treasurer';
+}) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: 'Not authenticated' };
+
+  const serviceClient = await createServiceClient();
+
+  // Verify caller is admin
+  const { data: profile } = await serviceClient
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+
+  if (profile?.role !== 'admin') return { error: 'Only admins can add members' };
+
+  // Look up user by email via admin API
+  const { data: { users }, error: listError } = await serviceClient.auth.admin.listUsers();
+  if (listError) return { error: 'Failed to look up users: ' + listError.message };
+
+  const matchedUser = users.find((u) => u.email === data.email);
+
+  if (matchedUser) {
+    // User exists — add directly to team
+    const { error } = await serviceClient
+      .from('team_members')
+      .insert({ team_id: data.teamId, user_id: matchedUser.id, role: data.role });
+
+    if (error) {
+      if (error.code === '23505') return { error: 'This user is already on the team' };
+      return { error: error.message };
+    }
+    return { success: true, added: true };
+  } else {
+    // User not registered — create an approved invite request
+    const { error } = await serviceClient
+      .from('invite_requests')
+      .insert({
+        email: data.email,
+        status: 'approved',
+        assigned_team_id: data.teamId,
+        assigned_role: data.role,
+      });
+
+    if (error) return { error: error.message };
+    return { success: true, invited: true };
+  }
 }
 
 export async function ensureCurrentWeek(teamId: string) {

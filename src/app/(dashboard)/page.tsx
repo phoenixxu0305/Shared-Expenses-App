@@ -43,7 +43,7 @@ export default async function HomePage() {
             role: assignedRole,
             created_at: new Date().toISOString(),
           }}
-          membership={null}
+          memberships={[]}
         />
       );
     }
@@ -57,27 +57,28 @@ export default async function HomePage() {
     return (
       <TeamDashboard
         profile={newProfile}
-        membership={null}
+        memberships={[]}
       />
     );
   }
 
-  const { data: membership } = await serviceClient
+  // Fetch ALL team memberships for this user
+  const { data: memberships } = await serviceClient
     .from('team_members')
     .select('*, teams(*)')
-    .eq('user_id', user.id)
-    .limit(1)
-    .single();
+    .eq('user_id', user.id);
 
-  // Auto-create current week if team exists but no week for today
-  if (membership) {
-    await ensureCurrentWeek(membership.team_id);
+  const allMemberships = memberships || [];
+
+  // Auto-create current week for each team
+  for (const m of allMemberships) {
+    await ensureCurrentWeek(m.team_id);
   }
 
   return (
     <TeamDashboard
       profile={profile}
-      membership={membership}
+      memberships={allMemberships}
     />
   );
 }

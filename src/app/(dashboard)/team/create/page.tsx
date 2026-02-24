@@ -43,10 +43,22 @@ export default async function TeamCreatePage() {
     .select('*')
     .eq('status', 'approved');
 
+  // Fetch all registered users (excluding admin) for member selection
+  const { data: allProfiles } = await serviceClient
+    .from('profiles')
+    .select('id, full_name')
+    .neq('id', user.id);
+
+  const availableUsers = (allProfiles || []).map((p: any) => ({
+    id: p.id,
+    full_name: p.full_name || 'Unnamed User',
+  }));
+
   return (
     <TeamCreateWizard
       userId={user.id}
       approvedInvites={approvedInvites || []}
+      availableUsers={availableUsers}
     />
   );
 }
