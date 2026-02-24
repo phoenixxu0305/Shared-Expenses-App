@@ -23,5 +23,7 @@ export default async function HistoryPage() {
     .limit(1)
     .single();
 
-  return <HistoryView teamId={membership?.team_id} />;
+  const isAdmin = membership?.role === 'admin';
+
+  return <HistoryView teamId={membership?.team_id} isAdmin={isAdmin} />;
 }

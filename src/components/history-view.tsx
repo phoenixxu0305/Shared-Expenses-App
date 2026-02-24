@@ -10,9 +10,16 @@ import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { calculateTotalSpent } from '@/lib/expense-calculations';
 import { HistorySkeleton } from '@/components/loading-skeletons';
+import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
+
+const CHART_COLORS = [
+  '#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6',
+  '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16',
+];
 
 interface HistoryViewProps {
   teamId: string | undefined;
+  isAdmin?: boolean;
 }
 
 interface WeekWithExpenses extends Week {
@@ -21,6 +28,7 @@ interface WeekWithExpenses extends Week {
 
 interface GroupedData {
   label: string;
+  key: string;
   totalKitty: number;
   totalSpent: number;
   surplus: number;
@@ -37,7 +45,7 @@ function groupByMonth(weeks: WeekWithExpenses[]): GroupedData[] {
     const label = date.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
 
     if (!groups[key]) {
-      groups[key] = { label, totalKitty: 0, totalSpent: 0, surplus: 0, expenses: [], weeks: [] };
+      groups[key] = { label, key, totalKitty: 0, totalSpent: 0, surplus: 0, expenses: [], weeks: [] };
     }
     groups[key].totalKitty += Number(week.total_kitty);
     groups[key].expenses.push(...week.expenses);
@@ -61,7 +69,7 @@ function groupByYear(weeks: WeekWithExpenses[]): GroupedData[] {
     const year = new Date(week.start_date).getFullYear().toString();
 
     if (!groups[year]) {
-      groups[year] = { label: year, totalKitty: 0, totalSpent: 0, surplus: 0, expenses: [], weeks: [] };
+      groups[year] = { label: year, key: year, totalKitty: 0, totalSpent: 0, surplus: 0, expenses: [], weeks: [] };
     }
     groups[year].totalKitty += Number(week.total_kitty);
     groups[year].expenses.push(...week.expenses);
@@ -78,10 +86,153 @@ function groupByYear(weeks: WeekWithExpenses[]): GroupedData[] {
     .map(([, v]) => v);
 }
 
-export function HistoryView({ teamId }: HistoryViewProps) {
+function buildDescriptionPieData(expenses: (Expense & { profiles: Profile })[]) {
+  const active = expenses.filter((e) => !e.is_deleted);
+  const map: Record<string, number> = {};
+  for (const e of active) {
+    const desc = e.description || 'Other';
+    map[desc] = (map[desc] || 0) + Number(e.amount);
+  }
+  return Object.entries(map)
+    .sort(([, a], [, b]) => b - a)
+    .map(([name, value]) => ({ name, value: Math.round(value * 100) / 100 }));
+}
+
+function buildSpenderBarData(expenses: (Expense & { profiles: Profile })[]) {
+  const active = expenses.filter((e) => !e.is_deleted);
+  const map: Record<string, number> = {};
+  for (const e of active) {
+    const name = e.profiles?.full_name || 'Unknown';
+    map[name] = (map[name] || 0) + Number(e.amount);
+  }
+  return Object.entries(map)
+    .sort(([, a], [, b]) => b - a)
+    .map(([name, value]) => ({ name, value: Math.round(value * 100) / 100 }));
+}
+
+function buildTypePieData(expenses: (Expense & { profiles: Profile })[]) {
+  const active = expenses.filter((e) => !e.is_deleted);
+  let personal = 0;
+  let team = 0;
+  for (const e of active) {
+    if (e.type === 'team') team += Number(e.amount);
+    else personal += Number(e.amount);
+  }
+  const data = [];
+  if (personal > 0) data.push({ name: 'Personal', value: Math.round(personal * 100) / 100 });
+  if (team > 0) data.push({ name: 'Team', value: Math.round(team * 100) / 100 });
+  return data;
+}
+
+function ExpenseCharts({ expenses }: { expenses: (Expense & { profiles: Profile })[] }) {
+  const descData = useMemo(() => buildDescriptionPieData(expenses), [expenses]);
+  const spenderData = useMemo(() => buildSpenderBarData(expenses), [expenses]);
+  const typeData = useMemo(() => buildTypePieData(expenses), [expenses]);
+
+  if (expenses.filter((e) => !e.is_deleted).length === 0) return null;
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+      {/* Cost distribution by item */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium text-muted-foreground">
+            Cost Distribution by Item
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={descData}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={80}
+                  label={(props) => {
+                    const n = String(props.name || '');
+                    const pct = (Number(props.percent || 0) * 100).toFixed(0);
+                    return `${n.length > 12 ? n.slice(0, 12) + '...' : n} ${pct}%`;
+                  }}
+                  labelLine={false}
+                >
+                  {descData.map((_, i) => (
+                    <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value) => `€${Number(value).toFixed(2)}`} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Spending by member */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium text-muted-foreground">
+            Spending by Member
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={spenderData} layout="vertical" margin={{ left: 10, right: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis type="number" tickFormatter={(v) => `€${v}`} />
+                <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 12 }} />
+                <Tooltip formatter={(value) => `€${Number(value).toFixed(2)}`} />
+                <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Personal vs Team */}
+      {typeData.length > 1 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Personal vs Team
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={typeData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={80}
+                    label={(props) => `${props.name} ${(Number(props.percent || 0) * 100).toFixed(0)}%`}
+                    labelLine={false}
+                  >
+                    <Cell fill="#3b82f6" />
+                    <Cell fill="#f59e0b" />
+                  </Pie>
+                  <Tooltip formatter={(value) => `€${Number(value).toFixed(2)}`} />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+export function HistoryView({ teamId, isAdmin = false }: HistoryViewProps) {
   const [weeks, setWeeks] = useState<WeekWithExpenses[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'week' | 'month' | 'year'>('week');
+  const [selectedMonth, setSelectedMonth] = useState<string>('all');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -122,26 +273,56 @@ export function HistoryView({ teamId }: HistoryViewProps) {
     setLoading(false);
   }
 
+  // Build list of available months for the admin filter dropdown
+  const availableMonths = useMemo(() => {
+    const monthSet = new Map<string, string>();
+    for (const week of weeks) {
+      const date = new Date(week.start_date);
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      if (!monthSet.has(key)) {
+        monthSet.set(key, date.toLocaleDateString('en-US', { year: 'numeric', month: 'long' }));
+      }
+    }
+    return Array.from(monthSet.entries())
+      .sort(([a], [b]) => b.localeCompare(a))
+      .map(([key, label]) => ({ key, label }));
+  }, [weeks]);
+
+  // Filter weeks by selected month (admin only)
+  const filteredWeeks = useMemo(() => {
+    if (!isAdmin || selectedMonth === 'all') return weeks;
+    return weeks.filter((week) => {
+      const date = new Date(week.start_date);
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      return key === selectedMonth;
+    });
+  }, [weeks, selectedMonth, isAdmin]);
+
   const groupedData = useMemo(() => {
-    if (viewMode === 'month') return groupByMonth(weeks);
-    if (viewMode === 'year') return groupByYear(weeks);
-    // Week mode: each week is its own group
-    return weeks.map((week) => ({
+    if (viewMode === 'month') return groupByMonth(filteredWeeks);
+    if (viewMode === 'year') return groupByYear(filteredWeeks);
+    return filteredWeeks.map((week) => ({
       label: week.label,
+      key: week.id,
       totalKitty: Number(week.total_kitty),
       totalSpent: calculateTotalSpent(week.expenses),
       surplus: Number(week.total_kitty) - calculateTotalSpent(week.expenses),
       expenses: week.expenses,
       weeks: [week],
     }));
-  }, [weeks, viewMode]);
+  }, [filteredWeeks, viewMode]);
+
+  // Aggregate all visible expenses for the top-level charts
+  const allVisibleExpenses = useMemo(() => {
+    return filteredWeeks.flatMap((w) => w.expenses);
+  }, [filteredWeeks]);
 
   async function exportCSV() {
     if (weeks.length === 0) return;
 
     const rows = [['Week', 'Date', 'User', 'Description', 'Type', 'Amount', 'Status']];
 
-    for (const week of weeks) {
+    for (const week of filteredWeeks) {
       for (const expense of week.expenses) {
         rows.push([
           week.label,
@@ -175,9 +356,24 @@ export function HistoryView({ teamId }: HistoryViewProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <h2 className="text-2xl font-bold">History</h2>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          {isAdmin && availableMonths.length > 0 && (
+            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+              <SelectTrigger className="w-44">
+                <SelectValue placeholder="Filter by month" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Months</SelectItem>
+                {availableMonths.map((m) => (
+                  <SelectItem key={m.key} value={m.key}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <Select value={viewMode} onValueChange={(v) => setViewMode(v as 'week' | 'month' | 'year')}>
             <SelectTrigger className="w-32">
               <SelectValue />
@@ -194,6 +390,9 @@ export function HistoryView({ teamId }: HistoryViewProps) {
         </div>
       </div>
 
+      {/* Charts section */}
+      <ExpenseCharts expenses={allVisibleExpenses} />
+
       {groupedData.length === 0 ? (
         <p className="text-muted-foreground text-center py-8">
           No historical data yet.
@@ -204,7 +403,7 @@ export function HistoryView({ teamId }: HistoryViewProps) {
             const isExpanded = expandedId === group.label;
 
             return (
-              <Card key={group.label}>
+              <Card key={group.key}>
                 <CardHeader
                   className="cursor-pointer"
                   onClick={() =>
@@ -215,13 +414,13 @@ export function HistoryView({ teamId }: HistoryViewProps) {
                     <CardTitle className="text-base">{group.label}</CardTitle>
                     <div className="flex items-center gap-3">
                       <span className="text-sm text-muted-foreground">
-                        Spent: €{group.totalSpent.toFixed(2)}
+                        Spent: &euro;{group.totalSpent.toFixed(2)}
                       </span>
                       <Badge variant={group.surplus >= 0 ? 'secondary' : 'destructive'}>
-                        {group.surplus >= 0 ? '+' : ''}€{group.surplus.toFixed(2)}
+                        {group.surplus >= 0 ? '+' : ''}&euro;{group.surplus.toFixed(2)}
                       </Badge>
                       <span className="text-muted-foreground">
-                        {isExpanded ? '▲' : '▼'}
+                        {isExpanded ? '\u25B2' : '\u25BC'}
                       </span>
                     </div>
                   </div>
@@ -229,13 +428,13 @@ export function HistoryView({ teamId }: HistoryViewProps) {
                 {isExpanded && (
                   <CardContent>
                     <div className="text-sm space-y-1 mb-4">
-                      <p>Total Kitty: €{group.totalKitty.toFixed(2)}</p>
+                      <p>Total Kitty: &euro;{group.totalKitty.toFixed(2)}</p>
                       {viewMode !== 'week' && (
                         <p>{group.weeks.length} week{group.weeks.length !== 1 ? 's' : ''}</p>
                       )}
                       {viewMode === 'week' && group.weeks[0] && (
                         <>
-                          <p>Per volunteer: €{Number(group.weeks[0].allocation_per_volunteer).toFixed(2)}</p>
+                          <p>Per volunteer: &euro;{Number(group.weeks[0].allocation_per_volunteer).toFixed(2)}</p>
                           {group.weeks[0].pooled_split_enabled && (
                             <p>
                               Pooled: {group.weeks[0].pooled_percentage}% team / {100 - group.weeks[0].pooled_percentage}% personal
@@ -244,6 +443,10 @@ export function HistoryView({ teamId }: HistoryViewProps) {
                         </>
                       )}
                     </div>
+
+                    {/* Per-group charts when expanded */}
+                    <ExpenseCharts expenses={group.expenses} />
+
                     <Separator className="mb-4" />
                     {group.expenses.length === 0 ? (
                       <p className="text-sm text-muted-foreground">No expenses</p>
@@ -268,7 +471,7 @@ export function HistoryView({ teamId }: HistoryViewProps) {
                               )}
                             </div>
                             <span className="font-medium">
-                              €{Number(expense.amount).toFixed(2)}
+                              &euro;{Number(expense.amount).toFixed(2)}
                             </span>
                           </div>
                         ))}
