@@ -71,9 +71,9 @@ export async function createTeam(data: {
       .eq('status', 'approved');
   }
 
-  // Create the initial week
-  const totalMembers = 1 + directUserIds.length + data.selectedMembers.length;
-  const totalKitty = totalMembers * data.allocationPerVolunteer;
+  // Create the initial week (admin has no budget — only count non-admin members)
+  const nonAdminMembers = directUserIds.length + data.selectedMembers.length;
+  const totalKitty = nonAdminMembers * data.allocationPerVolunteer;
   const { start, end } = getCurrentWeekDates();
   const { error: weekError } = await serviceClient.from('weeks').insert({
     team_id: team.id,
@@ -203,16 +203,17 @@ export async function ensureCurrentWeek(teamId: string) {
     .limit(1)
     .single();
 
-  // Get member count for total kitty calculation
+  // Get non-admin member count for total kitty (admin has no budget)
   const { count: memberCount } = await serviceClient
     .from('team_members')
     .select('*', { count: 'exact', head: true })
-    .eq('team_id', teamId);
+    .eq('team_id', teamId)
+    .neq('role', 'admin');
 
   const allocation = lastWeek?.allocation_per_volunteer ?? 100;
   const pooledEnabled = lastWeek?.pooled_split_enabled ?? false;
   const pooledPercentage = lastWeek?.pooled_percentage ?? 80;
-  const totalKitty = (memberCount || 1) * allocation;
+  const totalKitty = (memberCount || 0) * allocation;
 
   const { start, end } = getCurrentWeekDates();
 

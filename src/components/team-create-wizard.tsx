@@ -41,8 +41,10 @@ export function TeamCreateWizard({ userId, approvedInvites, availableUsers = [] 
   const [pooledEnabled, setPooledEnabled] = useState(false);
   const [pooledPercentage, setPooledPercentage] = useState(80);
 
-  const totalMemberCount = 1 + selectedUserIds.length + selectedEmails.length;
-  const totalKitty = totalMemberCount * allocationPerVolunteer;
+  // Admin has no budget — only count non-admin members
+  const nonAdminCount = selectedUserIds.length + selectedEmails.length;
+  const totalMemberCount = 1 + nonAdminCount; // for display (including admin)
+  const totalKitty = nonAdminCount * allocationPerVolunteer;
 
   function toggleUser(userId: string) {
     setSelectedUserIds((prev) =>

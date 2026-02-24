@@ -83,7 +83,8 @@ export function TeamSettings({ team, members, currentWeek, availableUsers, secti
     setSavingWeek(true);
     const supabase = createClient();
 
-    const totalKitty = members.length * allocation;
+    const nonAdminCount = members.filter((m) => m.role !== 'admin').length;
+    const totalKitty = nonAdminCount * allocation;
 
     const { error } = await supabase
       .from('weeks')
@@ -257,7 +258,7 @@ export function TeamSettings({ team, members, currentWeek, availableUsers, secti
                 </div>
               )}
               <p className="text-sm font-medium">
-                Total Kitty: €{(members.length * allocation).toFixed(2)}
+                Total Kitty: €{(members.filter((m) => m.role !== 'admin').length * allocation).toFixed(2)}
               </p>
               <Button onClick={saveWeekSettings} disabled={savingWeek}>
                 {savingWeek ? 'Saving...' : 'Save Week Settings'}
