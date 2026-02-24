@@ -188,13 +188,7 @@ function ExpenseCharts({ expenses }: { expenses: (Expense & { profiles: Profile 
     return d;
   }, [active]);
 
-  if (active.length === 0) {
-    return (
-      <div className="p-4 border border-dashed rounded text-sm text-muted-foreground">
-        No active expenses to chart ({expenses.length} total, {active.length} non-deleted)
-      </div>
-    );
-  }
+  if (active.length === 0) return null;
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
@@ -445,11 +439,6 @@ export function HistoryView({ teamId, isAdmin = false }: HistoryViewProps) {
             Export CSV
           </Button>
         </div>
-      </div>
-
-      {/* Debug info — remove after fixing */}
-      <div className="p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded text-sm">
-        Debug: {filteredWeeks.length} weeks loaded, {allVisibleExpenses.length} total expenses, {allVisibleExpenses.filter(e => !e.is_deleted).length} non-deleted
       </div>
 
       {/* Top-level charts */}
