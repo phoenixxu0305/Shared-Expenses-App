@@ -43,7 +43,7 @@ export function ExpenseForm({
   members,
   onSuccess,
 }: ExpenseFormProps) {
-  const [expenseType, setExpenseType] = useState<ExpenseType>('personal');
+  const [expenseType, setExpenseType] = useState<ExpenseType>(role === 'admin' ? 'team' : 'personal');
   const [amount, setAmount] = useState(0);
   const [description, setDescription] = useState('');
   const [receiptFile, setReceiptFile] = useState<File | null>(null);

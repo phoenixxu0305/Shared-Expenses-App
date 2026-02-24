@@ -242,10 +242,12 @@ export function TeamDashboard({ profile, memberships }: TeamDashboardProps) {
         expenseData = ed || [];
       }
 
+      // Exclude admin from member count — admin has no budget
       const { count } = await supabase
         .from('team_members')
         .select('*', { count: 'exact', head: true })
-        .eq('team_id', m.team_id);
+        .eq('team_id', m.team_id)
+        .neq('role', 'admin');
 
       const { data: memberData } = await supabase
         .from('team_members')

@@ -21,8 +21,12 @@ export async function addExpense(data: {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: 'Not authenticated' };
 
+  // Use service client for queries and inserts to bypass RLS
+  // (admin needs to insert expenses with another user's user_id)
+  const serviceClient = await createServiceClient();
+
   // Verify membership
-  const { data: membership } = await supabase
+  const { data: membership } = await serviceClient
     .from('team_members')
     .select('role')
     .eq('team_id', data.teamId)
@@ -40,7 +44,7 @@ export async function addExpense(data: {
   if (data.amount <= 0) return { error: 'Amount must be positive' };
 
   // Get week to validate budget
-  const { data: week } = await supabase
+  const { data: week } = await serviceClient
     .from('weeks')
     .select('*')
     .eq('id', data.weekId)
@@ -49,7 +53,7 @@ export async function addExpense(data: {
   if (!week) return { error: 'Week not found' };
 
   // Get existing expenses for validation
-  const { data: existingExpenses } = await supabase
+  const { data: existingExpenses } = await serviceClient
     .from('expenses')
     .select('*')
     .eq('week_id', data.weekId)
@@ -86,10 +90,12 @@ export async function addExpense(data: {
     const teamSpent = teamExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
 
     if (week.pooled_split_enabled) {
-      const { count: memberCount } = await supabase
+      // Exclude admin from member count — admin has no budget
+      const { count: memberCount } = await serviceClient
         .from('team_members')
         .select('*', { count: 'exact', head: true })
-        .eq('team_id', data.teamId);
+        .eq('team_id', data.teamId)
+        .neq('role', 'admin');
 
       const pooledMax =
         (memberCount || 0) * Number(week.allocation_per_volunteer) * (week.pooled_percentage / 100);
@@ -103,7 +109,7 @@ export async function addExpense(data: {
     }
   }
 
-  const { error } = await supabase.from('expenses').insert({
+  const { error } = await serviceClient.from('expenses').insert({
     team_id: data.teamId,
     week_id: data.weekId,
     user_id: data.targetUserId || user.id,
